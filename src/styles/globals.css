@@ -1,0 +1,228 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ── Default accent: green ─────────────────────────────────────────────── */
+  :root {
+    --brand-50:  236 253 245;
+    --brand-100: 209 250 229;
+    --brand-200: 167 243 208;
+    --brand-300: 110 231 183;
+    --brand-400: 52  211 153;
+    --brand-500: 16  185 129;
+    --brand-600: 5   150 105;
+    --brand-700: 4   120 87;
+    --brand-800: 6   95  70;
+    --brand-900: 6   78  59;
+    --brand-950: 2   44  34;
+
+    --color-surface: 9 9 11;
+    --color-surface-card: 24 24 27;
+    --color-surface-border: 39 39 42;
+  }
+
+  * {
+    @apply border-surface-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-surface font-sans text-zinc-100 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-surface;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-surface-muted;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-zinc-500;
+  }
+
+  /* Focus ring */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-surface;
+  }
+
+  /* Selection */
+  ::selection {
+    @apply bg-brand-500/30 text-brand-100;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Accent color palettes — kept OUTSIDE @layer so the attribute selector
+   specificity wins over :root and the cascade order is preserved.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* red */
+[data-accent="red"] {
+  --brand-50:  255 241 242;
+  --brand-100: 255 228 230;
+  --brand-200: 254 205 211;
+  --brand-300: 253 164 175;
+  --brand-400: 251 113 133;
+  --brand-500: 244 63  94;
+  --brand-600: 225 29  72;
+  --brand-700: 190 18  60;
+  --brand-800: 159 18  57;
+  --brand-900: 136 19  55;
+  --brand-950: 76  5   25;
+}
+
+/* orange */
+[data-accent="orange"] {
+  --brand-50:  255 247 237;
+  --brand-100: 255 237 213;
+  --brand-200: 254 215 170;
+  --brand-300: 253 186 116;
+  --brand-400: 251 146 60;
+  --brand-500: 249 115 22;
+  --brand-600: 234 88  12;
+  --brand-700: 194 65  12;
+  --brand-800: 154 52  18;
+  --brand-900: 124 45  18;
+  --brand-950: 67  20  7;
+}
+
+/* yellow */
+[data-accent="yellow"] {
+  --brand-50:  254 252 232;
+  --brand-100: 254 249 195;
+  --brand-200: 254 240 138;
+  --brand-300: 253 224 71;
+  --brand-400: 250 204 21;
+  --brand-500: 234 179 8;
+  --brand-600: 202 138 4;
+  --brand-700: 161 98  7;
+  --brand-800: 133 77  14;
+  --brand-900: 113 63  18;
+  --brand-950: 66  32  6;
+}
+
+/* pink */
+[data-accent="pink"] {
+  --brand-50:  253 242 248;
+  --brand-100: 252 231 243;
+  --brand-200: 251 207 232;
+  --brand-300: 249 168 212;
+  --brand-400: 244 114 182;
+  --brand-500: 236 72  153;
+  --brand-600: 219 39  119;
+  --brand-700: 190 24  93;
+  --brand-800: 157 23  77;
+  --brand-900: 131 24  67;
+  --brand-950: 80  7   36;
+}
+
+/* purple */
+[data-accent="purple"] {
+  --brand-50:  250 245 255;
+  --brand-100: 243 232 255;
+  --brand-200: 233 213 255;
+  --brand-300: 216 180 254;
+  --brand-400: 192 132 252;
+  --brand-500: 168 85  247;
+  --brand-600: 147 51  234;
+  --brand-700: 126 34  206;
+  --brand-800: 107 33  168;
+  --brand-900: 88  28  135;
+  --brand-950: 59  7   100;
+}
+
+/* blue */
+[data-accent="blue"] {
+  --brand-50:  239 246 255;
+  --brand-100: 219 234 254;
+  --brand-200: 191 219 254;
+  --brand-300: 147 197 253;
+  --brand-400: 96  165 250;
+  --brand-500: 59  130 246;
+  --brand-600: 37  99  235;
+  --brand-700: 29  78  216;
+  --brand-800: 30  64  175;
+  --brand-900: 30  58  138;
+  --brand-950: 23  37  84;
+}
+
+@layer components {
+  /* Card base */
+  .card {
+    @apply rounded-xl border border-surface-border bg-surface-card p-4;
+  }
+
+  .card-elevated {
+    @apply rounded-xl border border-surface-border bg-surface-elevated p-4 shadow-lg;
+  }
+
+  /* Input base */
+  .input {
+    @apply w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 transition-colors focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500;
+  }
+
+  /* Button variants */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700;
+  }
+
+  .btn-secondary {
+    @apply btn border border-surface-border bg-surface-card text-zinc-300 hover:border-zinc-600 hover:bg-surface-elevated hover:text-zinc-100;
+  }
+
+  .btn-ghost {
+    @apply btn text-zinc-400 hover:bg-surface-card hover:text-zinc-100;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+
+  /* Heatmap cell */
+  .heatmap-cell {
+    @apply rounded-sm transition-all duration-150 hover:scale-125 hover:ring-1 hover:ring-white/20;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent;
+  }
+
+  .glass {
+    @apply border border-white/5 bg-white/5 backdrop-blur-sm;
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

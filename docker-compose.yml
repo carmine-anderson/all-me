@@ -1,0 +1,23 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: allme-dev
+    ports:
+      - '5173:5173'
+    volumes:
+      # Mount source for hot reload
+      - .:/app
+      # Prevent host node_modules from overwriting container's
+      - /app/node_modules
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=development
+    restart: unless-stopped
+
+# Production override example:
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
