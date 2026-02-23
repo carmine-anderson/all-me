@@ -174,6 +174,7 @@ export function useRemoveFriend() {
         .from('friendships')
         .delete()
         .eq('id', friendshipId)
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
 
       if (error) throw error
     },

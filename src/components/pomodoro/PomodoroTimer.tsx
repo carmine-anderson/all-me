@@ -100,6 +100,7 @@ export function PomodoroTimer() {
             strokeWidth={STROKE}
             strokeLinecap="round"
             strokeDasharray={CIRCUMFERENCE}
+            style={{ strokeDashoffset: CIRCUMFERENCE }}
             animate={{ strokeDashoffset: dashOffset }}
             transition={{ duration: 0.5, ease: 'linear' }}
           />

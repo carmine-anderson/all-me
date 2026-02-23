@@ -120,6 +120,7 @@ export function DashboardPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setCheckinModalOpen(true)}
+                className="text-brand-400 hover:text-brand-300"
               >
                 + Check in
               </Button>

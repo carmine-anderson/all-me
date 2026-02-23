@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { format, parseISO } from 'date-fns'
 import { useProductivityCheckins } from '@/hooks/useProductivity'
@@ -13,6 +13,7 @@ export function ProductivityHeatmap() {
   const { data: checkins = [] } = useProductivityCheckins()
   const setCheckinModalOpen = useUIStore((s) => s.setCheckinModalOpen)
   const [tooltip, setTooltip] = useState<{ day: HeatmapDay; x: number; y: number } | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Build a lookup map: date → level
   const checkinMap = useMemo(() => {
@@ -43,6 +44,13 @@ export function ProductivityHeatmap() {
     if (week.length > 0) result.push(week)
     return result
   }, [allDates, checkinMap])
+
+  // Scroll to the far right (most recent / today) once data is ready
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth
+    }
+  }, [weeks])
 
   // Month label positions — skip a label if it's fewer than 3 cols from the previous one
   const monthLabels = useMemo(() => {
@@ -100,7 +108,7 @@ export function ProductivityHeatmap() {
         </div>
 
         {/* Grid */}
-        <div className="flex overflow-x-auto pb-1" style={{ gap: CELL_GAP }}>
+        <div ref={scrollRef} className="flex overflow-x-auto pb-1" style={{ gap: CELL_GAP }}>
           {weeks.map((week, wi) => (
             <div key={wi} className="flex flex-col" style={{ gap: CELL_GAP }}>
               {week.map((day, di) => {

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/providers/AuthProvider'
-import type { Task, TaskFormValues, TaskStatus } from '@/types'
+import type { Task, TaskFormValues, TaskStatus, RecurrenceDay } from '@/types'
 
 export const TASKS_QUERY_KEY = 'tasks'
 export const SHARED_TASKS_KEY = 'shared-tasks'
@@ -14,6 +14,11 @@ function mapRow(row: Record<string, unknown>): Task {
     title: row.title as string,
     description: (row.description as string) ?? null,
     dueDate: (row.due_date as string) ?? null,
+    startTime: (row.start_time as string) ?? null,
+    endTime: (row.end_time as string) ?? null,
+    isRecurring: (row.is_recurring as boolean) ?? false,
+    recurrenceDays: ((row.recurrence_days as string[]) ?? []) as RecurrenceDay[],
+    recurrenceEndDate: (row.recurrence_end_date as string) ?? null,
     priority: row.priority as Task['priority'],
     status: row.status as Task['status'],
     completedAt: (row.completed_at as string) ?? null,
@@ -65,6 +70,11 @@ export function useSharedTasksQuery() {
             title,
             description,
             due_date,
+            start_time,
+            end_time,
+            is_recurring,
+            recurrence_days,
+            recurrence_end_date,
             priority,
             status,
             completed_at,
@@ -87,6 +97,11 @@ export function useSharedTasksQuery() {
             title: task.title as string,
             description: (task.description as string) ?? null,
             dueDate: (task.due_date as string) ?? null,
+            startTime: (task.start_time as string) ?? null,
+            endTime: (task.end_time as string) ?? null,
+            isRecurring: (task.is_recurring as boolean) ?? false,
+            recurrenceDays: ((task.recurrence_days as string[]) ?? []) as RecurrenceDay[],
+            recurrenceEndDate: (task.recurrence_end_date as string) ?? null,
             priority: task.priority as Task['priority'],
             status: task.status as Task['status'],
             completedAt: (task.completed_at as string) ?? null,
@@ -171,16 +186,30 @@ export function useCreateTask() {
   return useMutation({
     mutationFn: async (values: TaskFormValues) => {
       if (!user) throw new Error('Not authenticated')
+
+      // Build the insert payload — only include new time/recurrence fields
+      // when they have actual values, so the request works even if the
+      // migration hasn't been applied yet (graceful degradation).
+      const payload: Record<string, unknown> = {
+        user_id: user.id,
+        title: values.title,
+        description: values.description || null,
+        due_date: values.dueDate || null,   // empty string → null
+        priority: values.priority,
+        status: values.status,
+      }
+
+      if (values.startTime) payload.start_time = values.startTime
+      if (values.endTime) payload.end_time = values.endTime
+      if (values.isRecurring) {
+        payload.is_recurring = true
+        payload.recurrence_days = values.recurrenceDays ?? []
+        if (values.recurrenceEndDate) payload.recurrence_end_date = values.recurrenceEndDate
+      }
+
       const { data, error } = await supabase
         .from('tasks')
-        .insert({
-          user_id: user.id,
-          title: values.title,
-          description: values.description ?? null,
-          due_date: values.dueDate ?? null,
-          priority: values.priority,
-          status: values.status,
-        })
+        .insert(payload)
         .select()
         .single()
 
@@ -204,8 +233,13 @@ export function useUpdateTask() {
         .from('tasks')
         .update({
           ...(values.title !== undefined && { title: values.title }),
-          ...(values.description !== undefined && { description: values.description }),
-          ...(values.dueDate !== undefined && { due_date: values.dueDate }),
+          ...(values.description !== undefined && { description: values.description || null }),
+          ...(values.dueDate !== undefined && { due_date: values.dueDate || null }),
+          ...(values.startTime !== undefined && { start_time: values.startTime || null }),
+          ...(values.endTime !== undefined && { end_time: values.endTime || null }),
+          ...(values.isRecurring !== undefined && { is_recurring: values.isRecurring }),
+          ...(values.recurrenceDays !== undefined && { recurrence_days: values.recurrenceDays }),
+          ...(values.recurrenceEndDate !== undefined && { recurrence_end_date: values.recurrenceEndDate || null }),
           ...(values.priority !== undefined && { priority: values.priority }),
           ...(values.status !== undefined && { status: values.status }),
           updated_at: new Date().toISOString(),

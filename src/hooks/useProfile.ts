@@ -37,6 +37,31 @@ export function useProfile() {
   })
 }
 
+/** Fetch any user's public profile by their ID (used to show task owner info) */
+export function useProfileById(userId: string | null | undefined) {
+  return useQuery({
+    queryKey: [QUERY_KEY, userId],
+    queryFn: async (): Promise<Profile | null> => {
+      if (!userId) return null
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, timezone')
+        .eq('id', userId)
+        .single()
+
+      if (error) throw error
+      return {
+        id: data.id,
+        username: data.username ?? null,
+        avatarUrl: data.avatar_url ?? null,
+        timezone: data.timezone,
+      }
+    },
+    enabled: !!userId,
+    staleTime: 60_000, // profile data changes rarely
+  })
+}
+
 export function useUpdateProfile() {
   const { user } = useAuth()
   const queryClient = useQueryClient()

@@ -22,13 +22,19 @@ export interface ProductivityCheckin {
 
 export type TaskStatus = 'todo' | 'in_progress' | 'done'
 export type TaskPriority = 'low' | 'medium' | 'high'
+export type RecurrenceDay = 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat'
 
 export interface Task {
   id: string
   userId: string
   title: string
   description: string | null
-  dueDate: string | null // ISO date string YYYY-MM-DD
+  dueDate: string | null        // ISO date string YYYY-MM-DD
+  startTime: string | null      // HH:MM (24hr, local time)
+  endTime: string | null        // HH:MM (24hr, local time)
+  isRecurring: boolean
+  recurrenceDays: RecurrenceDay[]
+  recurrenceEndDate: string | null // YYYY-MM-DD
   priority: TaskPriority
   status: TaskStatus
   completedAt: string | null
@@ -39,6 +45,8 @@ export interface Task {
   inviterName?: string | null
   inviterEmail?: string | null
   taskInviteId?: string | null
+  // Virtual instance flag (set by recurrence expander — never persisted)
+  isVirtual?: boolean
 }
 
 export type PomodoroSessionType = 'work' | 'short_break' | 'long_break'
@@ -137,6 +145,11 @@ export interface TaskFormValues {
   title: string
   description?: string
   dueDate?: string
+  startTime?: string       // HH:MM
+  endTime?: string         // HH:MM
+  isRecurring?: boolean
+  recurrenceDays?: RecurrenceDay[]
+  recurrenceEndDate?: string
   priority: TaskPriority
   status: TaskStatus
   invitedFriendIds?: string[]

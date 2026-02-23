@@ -8,6 +8,7 @@ import {
   timestamp,
   unique,
   check,
+  time,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
@@ -50,6 +51,11 @@ export const tasks = pgTable('tasks', {
   title: text('title').notNull(),
   description: text('description'),
   dueDate: date('due_date'),
+  startTime: time('start_time'),                          // HH:MM local time
+  endTime: time('end_time'),                              // HH:MM local time
+  isRecurring: boolean('is_recurring').default(false).notNull(),
+  recurrenceDays: text('recurrence_days').array().default(sql`'{}'`).notNull(),
+  recurrenceEndDate: date('recurrence_end_date'),
   priority: text('priority').default('medium').notNull(), // low | medium | high
   status: text('status').default('todo').notNull(),       // todo | in_progress | done
   completedAt: timestamp('completed_at', { withTimezone: true }),

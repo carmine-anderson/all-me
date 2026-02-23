@@ -159,6 +159,14 @@
   --brand-950: 23  37  84;
 }
 
+/* ── Native date/time picker icon — tinted to accent color ───────────────── */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  accent-color: rgb(var(--brand-500));
+  color-scheme: dark;
+}
+
 @layer components {
   /* Card base */
   .card {

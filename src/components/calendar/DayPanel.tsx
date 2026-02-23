@@ -1,25 +1,27 @@
+import { useRef, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { useToggleTaskStatus, useDeleteTask, useTasks } from '@/hooks/useTasks'
 import { useUIStore } from '@/store/uiStore'
+import { timeToMinutes, formatTimeRange, expandRecurringTask, getRealTaskId } from '@/lib/recurrence'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 import toast from 'react-hot-toast'
 
-const priorityBadgeVariant = {
-  low: 'info' as const,
-  medium: 'warning' as const,
-  high: 'danger' as const,
-}
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-const priorityDot = {
-  low: 'bg-sky-400',
-  medium: 'bg-amber-400',
-  high: 'bg-red-400',
-}
+const PX_PER_HOUR = 64   // height of each hour row in pixels
+const PX_PER_MIN = PX_PER_HOUR / 60
+const TOTAL_HEIGHT = PX_PER_HOUR * 24  // 1536px
 
-const statusLabel = { todo: 'To Do', in_progress: 'In Progress', done: 'Done' }
+const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => {
+  if (i === 0) return '12 AM'
+  if (i < 12) return `${i} AM`
+  if (i === 12) return '12 PM'
+  return `${i - 12} PM`
+})
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDayHeading(dateStr: string): { weekday: string; full: string; isToday: boolean } {
   const [year, month, day] = dateStr.split('-').map(Number)
@@ -37,100 +39,177 @@ function formatDayHeading(dateStr: string): { weekday: string; full: string; isT
   }
 }
 
-interface DayTaskRowProps {
+function getCurrentMinutes(): number {
+  const now = new Date()
+  return now.getHours() * 60 + now.getMinutes()
+}
+
+// ─── Overlap layout algorithm ─────────────────────────────────────────────────
+// Returns each timed task with a column index and total columns in its group.
+
+interface LayoutTask {
   task: Task
+  startMin: number
+  endMin: number
+  col: number
+  totalCols: number
+}
+
+function computeLayout(timedTasks: Task[]): LayoutTask[] {
+  if (timedTasks.length === 0) return []
+
+  // Sort by start time
+  const sorted = timedTasks
+    .filter((t) => t.startTime)
+    .map((t) => ({
+      task: t,
+      startMin: timeToMinutes(t.startTime!),
+      endMin: t.endTime ? timeToMinutes(t.endTime) : timeToMinutes(t.startTime!) + 60,
+    }))
+    .sort((a, b) => a.startMin - b.startMin)
+
+  // Group overlapping tasks using a sweep-line approach
+  const result: LayoutTask[] = []
+  let group: typeof sorted = []
+  let groupEnd = -1
+
+  const flushGroup = () => {
+    if (group.length === 0) return
+    const totalCols = group.length
+    group.forEach((item, idx) => {
+      result.push({ ...item, col: idx, totalCols })
+    })
+    group = []
+    groupEnd = -1
+  }
+
+  for (const item of sorted) {
+    if (item.startMin >= groupEnd) {
+      flushGroup()
+    }
+    group.push(item)
+    groupEnd = Math.max(groupEnd, item.endMin)
+  }
+  flushGroup()
+
+  return result
+}
+
+// ─── Priority colours ─────────────────────────────────────────────────────────
+
+const blockColors = {
+  low: {
+    todo: 'bg-sky-500/20 border-sky-500/40 text-sky-200',
+    in_progress: 'bg-sky-500/30 border-sky-500/50 text-sky-100',
+    done: 'bg-zinc-700/30 border-zinc-600/30 text-zinc-500',
+  },
+  medium: {
+    todo: 'bg-amber-500/20 border-amber-500/40 text-amber-200',
+    in_progress: 'bg-amber-500/30 border-amber-500/50 text-amber-100',
+    done: 'bg-zinc-700/30 border-zinc-600/30 text-zinc-500',
+  },
+  high: {
+    todo: 'bg-red-500/20 border-red-500/40 text-red-200',
+    in_progress: 'bg-red-500/30 border-red-500/50 text-red-100',
+    done: 'bg-zinc-700/30 border-zinc-600/30 text-zinc-500',
+  },
+}
+
+// ─── Timed task block ─────────────────────────────────────────────────────────
+
+interface TimelineBlockProps {
+  layout: LayoutTask
   onDetail: (id: string) => void
 }
 
-function DayTaskRow({ task, onDetail }: DayTaskRowProps) {
-  const { mutate: toggleStatus } = useToggleTaskStatus()
-  const { mutate: deleteTask } = useDeleteTask()
-  const { openTaskForm } = useUIStore()
-  const isDone = task.status === 'done'
+function TimelineBlock({ layout, onDetail }: TimelineBlockProps) {
+  const { task, startMin, endMin, col, totalCols } = layout
+  const top = startMin * PX_PER_MIN
+  const height = Math.max((endMin - startMin) * PX_PER_MIN, 20) // min 20px
+  const widthPct = 100 / totalCols
+  const leftPct = col * widthPct
+  const colorClass = blockColors[task.priority][task.status]
+  const isShort = height < 36
 
-  const handleToggle = () => {
-    toggleStatus(
-      { id: task.id, currentStatus: task.status },
-      {
-        onSuccess: () => {
-          if (!isDone) toast.success('Task completed! 🎉')
-          else toast.success('Task reopened')
-        },
-        onError: () => toast.error('Failed to update task'),
-      }
-    )
-  }
-
-  const handleDelete = () => {
-    deleteTask(task.id, {
-      onSuccess: () => toast.success('Task deleted'),
-      onError: () => toast.error('Failed to delete task'),
-    })
-  }
+  const realId = getRealTaskId(task.id)
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, x: 12 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -12 }}
+    <button
+      onClick={() => onDetail(realId)}
+      style={{
+        top: `${top}px`,
+        height: `${height}px`,
+        left: `calc(${leftPct}% + ${col > 0 ? 2 : 0}px)`,
+        width: `calc(${widthPct}% - ${col > 0 ? 2 : 1}px)`,
+      }}
       className={cn(
-        'group flex items-start gap-3 rounded-xl border p-3 transition-all duration-200',
+        'absolute rounded border px-1.5 text-left transition-all duration-150 hover:brightness-125 hover:z-10',
+        colorClass,
+        task.status === 'done' && 'opacity-60'
+      )}
+      title={`${task.title}${task.startTime ? ` · ${formatTimeRange(task.startTime, task.endTime)}` : ''}`}
+    >
+      <p className={cn('font-medium leading-tight truncate', isShort ? 'text-[10px]' : 'text-xs')}>
+        {task.status === 'done' && <span className="mr-0.5">✓</span>}
+        {task.title}
+      </p>
+      {!isShort && task.startTime && (
+        <p className="text-[10px] opacity-75 truncate">
+          {formatTimeRange(task.startTime, task.endTime)}
+        </p>
+      )}
+    </button>
+  )
+}
+
+// ─── All-day task row ─────────────────────────────────────────────────────────
+
+interface AllDayRowProps {
+  task: Task
+  onDetail: (id: string) => void
+  onEdit: (id: string) => void
+  onDelete: (id: string) => void
+  onToggle: (id: string, status: Task['status']) => void
+}
+
+function AllDayRow({ task, onDetail, onEdit, onDelete, onToggle }: AllDayRowProps) {
+  const isDone = task.status === 'done'
+  const dotColor = { low: 'bg-sky-400', medium: 'bg-amber-400', high: 'bg-red-400' }
+
+  return (
+    <div
+      className={cn(
+        'group flex items-center gap-2 rounded-lg border px-3 py-1.5 transition-all',
         isDone
           ? 'border-surface-border bg-surface opacity-60'
-          : 'border-surface-border bg-surface-card hover:border-zinc-700'
+          : 'border-surface-border bg-surface-card hover:border-zinc-600'
       )}
     >
-      {/* Priority dot + complete toggle */}
-      <div className="flex flex-col items-center gap-1.5 pt-0.5">
-        <div className={cn('h-2 w-2 rounded-full flex-shrink-0', priorityDot[task.priority])} />
+      <div className={cn('h-2 w-2 flex-shrink-0 rounded-full', dotColor[task.priority])} />
+      <button
+        onClick={() => onDetail(getRealTaskId(task.id))}
+        className={cn(
+          'flex-1 truncate text-left text-xs font-medium',
+          isDone ? 'text-zinc-500 line-through' : 'text-zinc-200 hover:text-brand-400'
+        )}
+      >
+        {task.title}
+      </button>
+      {/* Quick actions */}
+      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <button
-          onClick={handleToggle}
-          className={cn(
-            'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 transition-all duration-200',
-            isDone
-              ? 'border-brand-500 bg-brand-500'
-              : 'border-zinc-600 hover:border-brand-500'
-          )}
-          aria-label={isDone ? 'Mark incomplete' : 'Mark complete'}
+          onClick={() => onToggle(getRealTaskId(task.id), task.status)}
+          className="rounded p-0.5 text-zinc-500 hover:text-emerald-400"
+          title={isDone ? 'Reopen' : 'Complete'}
         >
-          {isDone && (
-            <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
-          )}
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+          </svg>
         </button>
-      </div>
-
-      {/* Content */}
-      <div className="min-w-0 flex-1">
         <button
-          onClick={() => onDetail(task.id)}
-          className="text-left w-full"
-        >
-          <p className={cn('text-sm font-medium leading-snug', isDone ? 'text-zinc-500 line-through' : 'text-zinc-100 hover:text-brand-400 transition-colors')}>
-            {task.title}
-          </p>
-          {task.description && (
-            <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{task.description}</p>
-          )}
-        </button>
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          <Badge variant={priorityBadgeVariant[task.priority]} className="text-[10px]">
-            {task.priority}
-          </Badge>
-          <span className="inline-flex items-center rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-zinc-500">
-            {statusLabel[task.status]}
-          </span>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex flex-col gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-        <button
-          onClick={() => openTaskForm(task.id)}
-          className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-surface-elevated hover:text-zinc-300"
-          aria-label="Edit task"
+          onClick={() => onEdit(getRealTaskId(task.id))}
+          className="rounded p-0.5 text-zinc-500 hover:text-zinc-300"
+          title="Edit"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -138,9 +217,9 @@ function DayTaskRow({ task, onDetail }: DayTaskRowProps) {
           </svg>
         </button>
         <button
-          onClick={handleDelete}
-          className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
-          aria-label="Delete task"
+          onClick={() => onDelete(getRealTaskId(task.id))}
+          className="rounded p-0.5 text-zinc-500 hover:text-red-400"
+          title="Delete"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -148,9 +227,11 @@ function DayTaskRow({ task, onDetail }: DayTaskRowProps) {
           </svg>
         </button>
       </div>
-    </motion.div>
+    </div>
   )
 }
+
+// ─── DayPanel ─────────────────────────────────────────────────────────────────
 
 export function DayPanel() {
   const {
@@ -162,21 +243,83 @@ export function DayPanel() {
   } = useUIStore()
 
   const { data: tasks = [] } = useTasks()
+  const { mutate: toggleStatus } = useToggleTaskStatus()
+  const { mutate: deleteTask } = useDeleteTask()
 
-  const dayTasks = calendarSelectedDay
-    ? tasks.filter((t) => t.dueDate === calendarSelectedDay)
-    : []
+  const scrollRef = useRef<HTMLDivElement>(null)
 
-  const pending = dayTasks.filter((t) => t.status !== 'done')
-  const completed = dayTasks.filter((t) => t.status === 'done')
+  // Build the full task list for the selected day:
+  // - Non-recurring tasks whose dueDate matches
+  // - Virtual instances from recurring tasks that fall on this day
+  const dayTasks = useMemo(() => {
+    if (!calendarSelectedDay) return []
+
+    const result: Task[] = []
+
+    for (const task of tasks) {
+      if (task.isRecurring && task.recurrenceDays.length > 0) {
+        // Expand just for this single day window
+        const virtuals = expandRecurringTask(task, calendarSelectedDay, calendarSelectedDay)
+        result.push(...virtuals)
+      } else if (task.dueDate === calendarSelectedDay) {
+        result.push(task)
+      }
+    }
+
+    return result
+  }, [tasks, calendarSelectedDay])
+
+  const timedTasks = useMemo(() => dayTasks.filter((t) => !!t.startTime), [dayTasks])
+  const allDayTasks = useMemo(() => dayTasks.filter((t) => !t.startTime), [dayTasks])
+  const layout = useMemo(() => computeLayout(timedTasks), [timedTasks])
 
   const heading = calendarSelectedDay ? formatDayHeading(calendarSelectedDay) : null
 
+  // Auto-scroll to current hour (or 8 AM) when panel opens
+  useEffect(() => {
+    if (!calendarDayPanelOpen || !scrollRef.current) return
+    const now = new Date()
+    const targetHour = heading?.isToday ? Math.max(now.getHours() - 1, 0) : 8
+    const scrollTop = targetHour * PX_PER_HOUR
+    // Small delay to let the panel animate in
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollTo({ top: scrollTop, behavior: 'smooth' })
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [calendarDayPanelOpen, heading?.isToday])
+
   const handleAddTask = () => {
-    if (calendarSelectedDay) {
-      openTaskForm(undefined, calendarSelectedDay)
-    }
+    if (calendarSelectedDay) openTaskForm(undefined, calendarSelectedDay)
   }
+
+  const handleSlotClick = (_hour: number) => {
+    if (!calendarSelectedDay) return
+    useUIStore.getState().openTaskForm(undefined, calendarSelectedDay)
+  }
+
+  const handleToggle = (id: string, currentStatus: Task['status']) => {
+    toggleStatus(
+      { id, currentStatus },
+      {
+        onSuccess: () => {
+          if (currentStatus !== 'done') toast.success('Task completed! 🎉')
+          else toast.success('Task reopened')
+        },
+        onError: () => toast.error('Failed to update task'),
+      }
+    )
+  }
+
+  const handleDelete = (id: string) => {
+    deleteTask(id, {
+      onSuccess: () => toast.success('Task deleted'),
+      onError: () => toast.error('Failed to delete task'),
+    })
+  }
+
+  // Current time indicator position
+  const currentMinutes = getCurrentMinutes()
+  const currentTimeTop = currentMinutes * PX_PER_MIN
 
   return (
     <AnimatePresence>
@@ -199,7 +342,7 @@ export function DayPanel() {
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[100vw] flex-col border-l border-surface-border bg-surface-card shadow-2xl sm:max-w-sm md:max-w-md"
           >
-            {/* Header */}
+            {/* ── Header ── */}
             <div className="flex items-start justify-between border-b border-surface-border px-5 py-4">
               <div>
                 {heading && (
@@ -216,37 +359,52 @@ export function DayPanel() {
                   </>
                 )}
               </div>
-              <button
-                onClick={closeCalendarDayPanel}
-                className="rounded-lg p-1 text-zinc-400 transition-colors hover:bg-surface-elevated hover:text-zinc-100"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Summary bar */}
-            <div className="flex items-center gap-4 border-b border-surface-border bg-surface px-5 py-2.5">
-              <span className="text-xs text-zinc-500">
-                <span className="font-semibold text-zinc-300">{pending.length}</span> pending
-              </span>
-              <span className="text-xs text-zinc-500">
-                <span className="font-semibold text-emerald-400">{completed.length}</span> completed
-              </span>
-              <div className="ml-auto">
+              <div className="flex items-center gap-2">
                 <Button variant="primary" size="sm" onClick={handleAddTask}>
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  Add Task
+                  Add
                 </Button>
+                <button
+                  onClick={closeCalendarDayPanel}
+                  className="rounded-lg p-1 text-zinc-400 transition-colors hover:bg-surface-elevated hover:text-zinc-100"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
             </div>
 
-            {/* Task list */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {dayTasks.length === 0 ? (
+            {/* ── All-day strip ── */}
+            {allDayTasks.length > 0 && (
+              <div className="border-b border-surface-border bg-surface px-4 py-2">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+                  All day · {allDayTasks.length}
+                </p>
+                <div className="flex flex-col gap-1">
+                  {allDayTasks.map((task) => (
+                    <AllDayRow
+                      key={task.id}
+                      task={task}
+                      onDetail={openTaskDetail}
+                      onEdit={openTaskForm}
+                      onDelete={handleDelete}
+                      onToggle={handleToggle}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── 24-hour timeline ── */}
+            <div
+              ref={scrollRef}
+              className="flex-1 overflow-y-auto"
+              style={{ scrollbarWidth: 'thin' }}
+            >
+              {dayTasks.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
                     <svg className="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -255,46 +413,65 @@ export function DayPanel() {
                     </svg>
                   </div>
                   <p className="text-sm font-medium text-zinc-400">No tasks for this day</p>
-                  <p className="mt-1 text-xs text-zinc-600">Click "Add Task" to schedule something here.</p>
+                  <p className="mt-1 text-xs text-zinc-600">Click "Add" to schedule something here.</p>
                 </div>
-              ) : (
-                <>
-                  {/* Pending tasks */}
-                  {pending.length > 0 && (
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-600">
-                        Pending · {pending.length}
-                      </p>
-                      <div className="space-y-2">
-                        <AnimatePresence>
-                          {pending.map((task) => (
-                            <DayTaskRow key={task.id} task={task} onDetail={openTaskDetail} />
-                          ))}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Completed tasks */}
-                  {completed.length > 0 && (
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-600">
-                        Completed · {completed.length}
-                      </p>
-                      <div className="space-y-2">
-                        <AnimatePresence>
-                          {completed.map((task) => (
-                            <DayTaskRow key={task.id} task={task} onDetail={openTaskDetail} />
-                          ))}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  )}
-                </>
               )}
+
+              <div
+                className="relative"
+                style={{ height: `${TOTAL_HEIGHT}px` }}
+              >
+                {/* Hour rows */}
+                {HOUR_LABELS.map((label, hour) => (
+                  <div
+                    key={hour}
+                    className="absolute left-0 right-0 flex cursor-pointer hover:bg-brand-500/5"
+                    style={{ top: `${hour * PX_PER_HOUR}px`, height: `${PX_PER_HOUR}px` }}
+                    onClick={() => handleSlotClick(hour)}
+                  >
+                    {/* Hour label */}
+                    <div className="flex w-14 flex-shrink-0 items-start justify-end pr-3 pt-1">
+                      <span className="text-[10px] font-medium text-zinc-600">{label}</span>
+                    </div>
+                    {/* Grid line */}
+                    <div className="flex-1 border-t border-surface-border/50" />
+                  </div>
+                ))}
+
+                {/* Half-hour lines */}
+                {Array.from({ length: 24 }, (_, hour) => (
+                  <div
+                    key={`half-${hour}`}
+                    className="absolute left-14 right-0 border-t border-surface-border/20"
+                    style={{ top: `${hour * PX_PER_HOUR + PX_PER_HOUR / 2}px` }}
+                  />
+                ))}
+
+                {/* Current time indicator (today only) */}
+                {heading?.isToday && (
+                  <div
+                    className="absolute left-0 right-0 z-20 flex items-center"
+                    style={{ top: `${currentTimeTop}px` }}
+                  >
+                    <div className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-red-500 ml-11" />
+                    <div className="flex-1 border-t-2 border-red-500" />
+                  </div>
+                )}
+
+                {/* Timed task blocks */}
+                <div className="absolute inset-0 left-14 right-2">
+                  {layout.map(({ task, col, totalCols, startMin, endMin }) => (
+                    <TimelineBlock
+                      key={task.id}
+                      layout={{ task, col, totalCols, startMin, endMin }}
+                      onDetail={openTaskDetail}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
 
-            {/* Footer */}
+            {/* ── Footer ── */}
             <div className="border-t border-surface-border px-5 py-3">
               <Button variant="secondary" size="sm" className="w-full" onClick={closeCalendarDayPanel}>
                 Close

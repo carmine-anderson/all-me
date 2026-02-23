@@ -5,7 +5,9 @@ import { useToggleTaskStatus, useDeleteTask, useTasks } from '@/hooks/useTasks'
 import { useTaskInvitesForTask } from '@/hooks/useTaskInvites'
 import { useUIStore } from '@/store/uiStore'
 import { useAuth } from '@/providers/AuthProvider'
+import { useProfileById } from '@/hooks/useProfile'
 import { formatDueDate, cn } from '@/lib/utils'
+import { formatTimeRange, formatRecurrenceDays, getRealTaskId } from '@/lib/recurrence'
 import type { TaskInviteWithInvitee } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -23,11 +25,12 @@ const statusBadgeVariant = {
   done: 'success' as const,
 }
 
-// ─── Invite status badge ──────────────────────────────────────────────────────
+// ─── Participant status badge configs ─────────────────────────────────────────
 const inviteStatusConfig = {
-  pending: { label: 'Pending', className: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20' },
+  pending:  { label: 'Awaiting', className: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20' },
   accepted: { label: 'Accepted', className: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' },
   declined: { label: 'Declined', className: 'bg-red-500/15 text-red-400 border border-red-500/20' },
+  owner:    { label: 'Owner',    className: 'bg-brand-500/15 text-brand-400 border border-brand-500/20' },
 }
 
 function getInitials(username: string | null, email: string): string {
@@ -35,7 +38,41 @@ function getInitials(username: string | null, email: string): string {
   return email.slice(0, 2).toUpperCase()
 }
 
-// ─── Shared-with row ──────────────────────────────────────────────────────────
+// ─── Owner row ────────────────────────────────────────────────────────────────
+function OwnerRow({ ownerId }: { ownerId: string }) {
+  const { data: profile } = useProfileById(ownerId)
+  const { user } = useAuth()
+  const isCurrentUser = user?.id === ownerId
+  const displayName = profile?.username
+    ? profile.username
+    : isCurrentUser
+      ? (user?.email?.split('@')[0] ?? 'You')
+      : 'Loading…'
+  const email = isCurrentUser ? (user?.email ?? '') : ''
+  const initials = profile?.username
+    ? profile.username.slice(0, 2).toUpperCase()
+    : displayName.slice(0, 2).toUpperCase()
+  const cfg = inviteStatusConfig.owner
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500/20 text-[10px] font-semibold text-brand-400">
+        {initials}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-zinc-200">
+          {displayName}{isCurrentUser && <span className="ml-1 text-zinc-500">(you)</span>}
+        </p>
+        {email && <p className="truncate text-xs text-zinc-500">{email}</p>}
+      </div>
+      <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', cfg.className)}>
+        {cfg.label}
+      </span>
+    </div>
+  )
+}
+
+// ─── Invitee row ──────────────────────────────────────────────────────────────
 function InviteeRow({ invite }: { invite: TaskInviteWithInvitee }) {
   const displayName = invite.inviteeUsername ?? invite.inviteeEmail.split('@')[0]
   const initials = getInitials(invite.inviteeUsername, invite.inviteeEmail)
@@ -44,7 +81,7 @@ function InviteeRow({ invite }: { invite: TaskInviteWithInvitee }) {
   return (
     <div className="flex items-center gap-3">
       {/* Avatar */}
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500/20 text-[10px] font-semibold text-brand-400">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-elevated text-[10px] font-semibold text-zinc-400">
         {initials}
       </div>
       {/* Name + email */}
@@ -68,11 +105,14 @@ export function TaskDetailPopup() {
   const { mutate: toggleStatus } = useToggleTaskStatus()
   const { mutate: deleteTask } = useDeleteTask()
 
-  const task = taskDetailTaskId ? tasks.find((t) => t.id === taskDetailTaskId) : null
+  // Resolve virtual IDs (e.g. "virtual:uuid:date") to the real UUID before any lookups
+  const realTaskId = taskDetailTaskId ? getRealTaskId(taskDetailTaskId) : null
 
-  // Fetch invites only when the popup is open and we have a task
+  const task = realTaskId ? tasks.find((t) => t.id === realTaskId) : null
+
+  // Fetch invites only when the popup is open and we have a task (always use real UUID)
   const { data: invites = [], isLoading: invitesLoading } = useTaskInvitesForTask(
-    taskDetailOpen ? taskDetailTaskId : null
+    taskDetailOpen ? realTaskId : null
   )
   const isDone = task?.status === 'done'
   // Only the task owner can edit/delete
@@ -197,6 +237,40 @@ export function TaskDetailPopup() {
                 </div>
               )}
 
+              {/* Time */}
+              {task.startTime && (
+                <div className="flex items-center gap-2">
+                  <svg className="h-4 w-4 flex-shrink-0 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm text-zinc-400">
+                    {formatTimeRange(task.startTime, task.endTime)}
+                  </span>
+                </div>
+              )}
+
+              {/* Recurrence */}
+              {task.isRecurring && task.recurrenceDays.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <svg className="h-4 w-4 flex-shrink-0 mt-0.5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span className="text-sm text-zinc-400">
+                    Every {formatRecurrenceDays(task.recurrenceDays)}
+                    {task.recurrenceEndDate && (
+                      <span className="text-zinc-500">
+                        {' '}until{' '}
+                        {new Date(task.recurrenceEndDate + 'T00:00:00').toLocaleDateString('en-US', {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                        })}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
+
               {/* Description */}
               {task.description ? (
                 <div>
@@ -207,24 +281,28 @@ export function TaskDetailPopup() {
                 <p className="text-sm italic text-zinc-600">No description provided.</p>
               )}
 
-              {/* Shared with */}
-              {(invitesLoading || invites.length > 0) && (
+              {/* People — owner always shown, invitees shown when present */}
+              {task && (
                 <div>
                   <p className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-600">
-                    Shared with
+                    People
                   </p>
-                  {invitesLoading ? (
-                    <div className="flex items-center gap-2 py-1">
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-surface-border border-t-brand-500" />
-                      <span className="text-xs text-zinc-500">Loading…</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-2.5">
-                      {invites.map((invite) => (
+                  <div className="flex flex-col gap-2.5">
+                    {/* Owner row — always first */}
+                    <OwnerRow ownerId={task.userId} />
+
+                    {/* Invitee rows */}
+                    {invitesLoading ? (
+                      <div className="flex items-center gap-2 py-1">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-surface-border border-t-brand-500" />
+                        <span className="text-xs text-zinc-500">Loading…</span>
+                      </div>
+                    ) : (
+                      invites.map((invite) => (
                         <InviteeRow key={invite.id} invite={invite} />
-                      ))}
-                    </div>
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
 

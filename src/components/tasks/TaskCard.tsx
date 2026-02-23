@@ -1,3 +1,4 @@
+import { forwardRef } from 'react'
 import { motion } from 'framer-motion'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -30,7 +31,7 @@ const statusLabel = {
   done: 'Done',
 }
 
-export function TaskCard({ task }: TaskCardProps) {
+export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(function TaskCard({ task }, ref) {
   const { mutate: toggleStatus } = useToggleTaskStatus()
   const { mutate: deleteTask } = useDeleteTask()
   const { openTaskForm, openTaskDetail } = useUIStore()
@@ -61,6 +62,7 @@ export function TaskCard({ task }: TaskCardProps) {
 
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -151,4 +153,4 @@ export function TaskCard({ task }: TaskCardProps) {
       </div>
     </motion.div>
   )
-}
+})

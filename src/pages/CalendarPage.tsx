@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTasks } from '@/hooks/useTasks'
 import { useUIStore } from '@/store/uiStore'
+import { expandRecurringTask } from '@/lib/recurrence'
 import { DayPanel } from '@/components/calendar/DayPanel'
 import { TaskDetailPopup } from '@/components/calendar/TaskDetailPopup'
 import { TaskForm } from '@/components/tasks/TaskForm'
@@ -93,6 +94,7 @@ function TaskChip({ task, onClick }: TaskChipProps) {
       )}
       title={task.title}
     >
+      {task.isRecurring && <span className="mr-0.5 opacity-60">↻</span>}
       {task.title}
     </button>
   )
@@ -110,22 +112,33 @@ interface DayCellProps {
   onTaskClick: (taskId: string, e: React.MouseEvent) => void
 }
 
+const priorityDotColor: Record<string, string> = {
+  low: 'bg-sky-400',
+  medium: 'bg-amber-400',
+  high: 'bg-red-400',
+  done: 'bg-emerald-500',
+}
+
 function DayCell({ dateStr, isCurrentMonth, tasks, isToday, isSelected, onDayClick, onTaskClick }: DayCellProps) {
   const dayNum = Number(dateStr.split('-')[2])
 
-  // Show more chips on larger screens — controlled via CSS classes
-  // We always render up to 4 but hide extras on small screens
   const MAX_CHIPS = 4
   const visible = tasks.slice(0, MAX_CHIPS)
   const overflow = tasks.length - MAX_CHIPS
+
+  // For mobile: up to 3 dots representing tasks
+  const mobileDots = tasks.slice(0, 3)
+  const mobileOverflow = tasks.length - 3
 
   return (
     <div
       onClick={() => onDayClick(dateStr)}
       className={cn(
-        'group relative flex cursor-pointer flex-col rounded-xl border p-1.5 transition-all duration-150 sm:p-2',
-        // Responsive min-height: small on mobile, grows on larger screens
-        'min-h-[72px] sm:min-h-[100px] md:min-h-[120px] lg:min-h-[130px]',
+        'group relative flex cursor-pointer flex-col rounded-xl border transition-all duration-150',
+        // Mobile: compact, just enough room for number + dots
+        'p-1.5 min-h-[52px]',
+        // sm+: more padding and taller
+        'sm:p-2 sm:min-h-[100px] md:min-h-[120px] lg:min-h-[130px]',
         isCurrentMonth
           ? 'border-surface-border bg-surface-card hover:border-zinc-600 hover:bg-surface-elevated'
           : 'border-transparent bg-surface/40 opacity-35',
@@ -134,10 +147,10 @@ function DayCell({ dateStr, isCurrentMonth, tasks, isToday, isSelected, onDayCli
       )}
     >
       {/* Day number */}
-      <div className="mb-1 flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <span
           className={cn(
-            'flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold sm:h-6 sm:w-6 sm:text-xs',
+            'flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold sm:h-6 sm:w-6',
             isToday
               ? 'bg-brand-500 text-white'
               : isCurrentMonth
@@ -154,32 +167,51 @@ function DayCell({ dateStr, isCurrentMonth, tasks, isToday, isSelected, onDayCli
         )}
       </div>
 
-      {/* Task chips — show 1 on mobile, up to 2 on sm, up to 3 on md, up to 4 on lg */}
-      <div className="flex flex-col gap-0.5">
+      {/* Mobile: dot indicators only (no chips) */}
+      {tasks.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-0.5 sm:hidden">
+          {mobileDots.map((task) => (
+            <span
+              key={task.id}
+              className={cn(
+                'h-1.5 w-1.5 rounded-full',
+                task.status === 'done' ? priorityDotColor.done : priorityDotColor[task.priority]
+              )}
+            />
+          ))}
+          {mobileOverflow > 0 && (
+            <span className="text-[8px] leading-none text-zinc-600">+{mobileOverflow}</span>
+          )}
+        </div>
+      )}
+
+      {/* sm+: full task chips */}
+      <div className="mt-1 hidden flex-col gap-0.5 sm:flex">
         {visible.map((task, idx) => (
           <div
             key={task.id}
             className={cn(
               idx === 0 ? 'block' : '',
-              idx === 1 ? 'hidden sm:block' : '',
+              idx === 1 ? 'block' : '',
               idx === 2 ? 'hidden md:block' : '',
               idx === 3 ? 'hidden lg:block' : '',
             )}
           >
             <TaskChip
               task={task}
-              onClick={(e) => onTaskClick(task.id, e)}
+              onClick={(e) => {
+                if (task.isVirtual) {
+                  e.stopPropagation()
+                  onDayClick(dateStr)
+                } else {
+                  onTaskClick(task.id, e)
+                }
+              }}
             />
           </div>
         ))}
-        {/* Overflow indicator — accounts for hidden chips on smaller screens */}
-        {tasks.length > 1 && (
-          <span className="pl-0.5 text-[9px] text-zinc-600 sm:hidden">
-            +{tasks.length - 1} more
-          </span>
-        )}
         {overflow > 0 && (
-          <span className="hidden pl-0.5 text-[9px] text-zinc-600 sm:block lg:hidden">
+          <span className="pl-0.5 text-[9px] text-zinc-600 md:hidden">
             {tasks.length > 2 ? `+${tasks.length - 2} more` : ''}
           </span>
         )}
@@ -214,16 +246,37 @@ export function CalendarPage() {
 
   const grid = useMemo(() => buildCalendarGrid(viewYear, viewMonth), [viewYear, viewMonth])
 
+  // Build the window string for the current month view
+  const windowStart = useMemo(
+    () => `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-01`,
+    [viewYear, viewMonth]
+  )
+  const windowEnd = useMemo(() => {
+    const lastDay = new Date(viewYear, viewMonth + 1, 0)
+    return toLocalDateStr(lastDay)
+  }, [viewYear, viewMonth])
+
   const tasksByDate = useMemo(() => {
     const map: Record<string, Task[]> = {}
+
     for (const task of tasks) {
-      if (task.dueDate) {
+      if (task.isRecurring && task.recurrenceDays.length > 0) {
+        // Recurring tasks: expand into virtual instances across the month window.
+        // The original task row has no fixed due date — all appearances are virtual.
+        const virtuals = expandRecurringTask(task, windowStart, windowEnd)
+        for (const v of virtuals) {
+          if (!map[v.dueDate!]) map[v.dueDate!] = []
+          map[v.dueDate!].push(v)
+        }
+      } else if (task.dueDate) {
+        // Non-recurring task: show on its due date only
         if (!map[task.dueDate]) map[task.dueDate] = []
         map[task.dueDate].push(task)
       }
     }
+
     return map
-  }, [tasks])
+  }, [tasks, windowStart, windowEnd])
 
   const today_str = todayStr()
 
@@ -279,7 +332,7 @@ export function CalendarPage() {
           <div>
             <h1 className="text-xl font-bold text-zinc-100 sm:text-2xl">Calendar</h1>
             <p className="mt-0.5 text-xs text-zinc-500 sm:text-sm">
-              Click any day to view or manage tasks · Click a task chip for details
+              Click any day to open the 24-hour view · Click a task chip for details
             </p>
           </div>
           <button
@@ -360,7 +413,6 @@ export function CalendarPage() {
           <div className="grid grid-cols-7 border-b border-surface-border">
             {DAY_HEADERS.map((d) => (
               <div key={d} className="py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-zinc-600 sm:text-xs">
-                {/* Show abbreviated on mobile (S/M/T…), full on sm+ */}
                 <span className="sm:hidden">{d[0]}</span>
                 <span className="hidden sm:inline">{d}</span>
               </div>
@@ -405,6 +457,7 @@ export function CalendarPage() {
                 {label}
               </span>
             ))}
+            <span className="ml-auto text-[10px] text-zinc-600">↻ = recurring</span>
           </div>
         </div>
       </motion.div>
