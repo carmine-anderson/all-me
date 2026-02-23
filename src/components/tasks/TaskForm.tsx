@@ -65,14 +65,17 @@ const schema = z
 type FormValues = z.infer<typeof schema>
 
 // ─── Shared input class ───────────────────────────────────────────────────────
-// Explicit text colour + bg so iOS Safari renders them correctly
-const nativeInputCls = cn(
-  'w-full rounded-lg border bg-surface px-3 py-2.5 text-sm text-zinc-100 transition-colors',
+// Explicit text colour + bg so iOS Safari renders them correctly.
+// color-scheme:dark forces the native date/time picker chrome to dark mode.
+const nativeInputCls = [
+  'w-full rounded-lg border bg-surface-card px-3 py-2.5 text-sm text-zinc-100 transition-colors',
+  'placeholder-zinc-500',
   'focus:outline-none focus:ring-2 focus:ring-brand-500/50',
   'border-surface-border hover:border-zinc-600',
-  // iOS Safari needs explicit colour-scheme so the native picker matches dark UI
-  '[color-scheme:dark]'
-)
+].join(' ')
+
+// Inline style applied to all native date/time inputs to force dark picker on iOS
+const nativeInputStyle: React.CSSProperties = { colorScheme: 'dark' }
 
 // ─── TaskForm ─────────────────────────────────────────────────────────────────
 
@@ -222,13 +225,12 @@ export function TaskForm() {
             exit={{ y: '100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             className={cn(
-              // Mobile: bottom sheet
-              'fixed bottom-0 left-0 right-0 z-[60] flex max-h-[92dvh] flex-col',
+              // Mobile: full-height bottom sheet so nothing is clipped
+              'fixed bottom-0 left-0 right-0 z-[60] flex h-[96dvh] flex-col',
               'rounded-t-2xl border-t border-surface-border bg-surface-card shadow-2xl',
-              // sm+: right slide-over (override the bottom-sheet positioning)
-              'sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:max-h-full sm:w-full sm:max-w-md sm:rounded-none sm:rounded-l-none sm:border-l sm:border-t-0',
+              // sm+: right slide-over
+              'sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:w-full sm:max-w-md sm:rounded-none sm:border-l sm:border-t-0',
             )}
-            style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
           >
             {/* Drag handle — mobile only */}
             <div className="flex justify-center pt-3 pb-1 sm:hidden">
@@ -278,6 +280,7 @@ export function TaskForm() {
                   <input
                     type="date"
                     className={nativeInputCls}
+                    style={nativeInputStyle}
                     {...register('dueDate')}
                   />
                   {errors.dueDate && (
@@ -295,6 +298,7 @@ export function TaskForm() {
                     <input
                       type="time"
                       className={nativeInputCls}
+                      style={nativeInputStyle}
                       {...register('startTime')}
                     />
                     {errors.startTime && (
@@ -306,6 +310,7 @@ export function TaskForm() {
                     <input
                       type="time"
                       className={nativeInputCls}
+                      style={nativeInputStyle}
                       {...register('endTime')}
                     />
                     {errors.endTime && (
@@ -394,6 +399,7 @@ export function TaskForm() {
                           <input
                             type="date"
                             className={nativeInputCls}
+                            style={nativeInputStyle}
                             {...register('recurrenceEndDate')}
                           />
                         </div>
