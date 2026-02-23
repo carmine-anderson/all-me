@@ -217,9 +217,10 @@ export function TaskForm() {
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             className="fixed right-0 top-0 z-[60] flex h-full w-full max-w-md flex-col border-l border-surface-border bg-surface-card shadow-2xl"
+            style={{ maxWidth: 'min(448px, 100vw)' }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
+            <div className="flex items-center justify-between border-b border-surface-border px-4 py-4 sm:px-6">
               <h2 className="text-base font-semibold text-zinc-100">
                 {isEditing ? 'Edit Task' : 'New Task'}
               </h2>
@@ -234,7 +235,7 @@ export function TaskForm() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="flex flex-1 flex-col gap-5 overflow-y-auto p-6">
+            <form onSubmit={handleSubmit(onSubmit)} className="flex flex-1 flex-col gap-5 overflow-y-auto px-4 py-6 sm:px-6">
               <Input
                 label="Title *"
                 placeholder="What needs to be done?"
@@ -262,13 +263,13 @@ export function TaskForm() {
               {/* ── Time section ── */}
               <div className="flex flex-col gap-1.5">
                 <p className="text-xs font-medium text-zinc-400">Time (optional)</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-[11px] text-zinc-500">Start</label>
                     <input
                       type="time"
                       className={cn(
-                        'w-full rounded-lg border bg-surface px-3 py-2 text-sm text-zinc-100 transition-colors',
+                        'w-full min-w-0 rounded-lg border bg-surface px-2 py-2 text-sm text-zinc-100 transition-colors',
                         'focus:outline-none focus:ring-2 focus:ring-brand-500/50',
                         errors.startTime
                           ? 'border-red-500/50 focus:ring-red-500/30'
@@ -280,12 +281,12 @@ export function TaskForm() {
                       <p className="text-[11px] text-red-400">{errors.startTime.message}</p>
                     )}
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-[11px] text-zinc-500">End</label>
                     <input
                       type="time"
                       className={cn(
-                        'w-full rounded-lg border bg-surface px-3 py-2 text-sm text-zinc-100 transition-colors',
+                        'w-full min-w-0 rounded-lg border bg-surface px-2 py-2 text-sm text-zinc-100 transition-colors',
                         'focus:outline-none focus:ring-2 focus:ring-brand-500/50',
                         errors.endTime
                           ? 'border-red-500/50 focus:ring-red-500/30'
@@ -431,7 +432,7 @@ export function TaskForm() {
                 </div>
               )}
 
-              <div className="mt-auto flex gap-3 pt-4">
+              <div className="mt-auto flex gap-3 pt-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
                 <Button type="button" variant="secondary" className="flex-1" onClick={closeTaskForm}>
                   Cancel
                 </Button>
