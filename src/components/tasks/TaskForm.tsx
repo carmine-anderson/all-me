@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -93,7 +93,16 @@ export function TaskForm() {
   const isRecurring = watch('isRecurring')
   const recurrenceDays = watch('recurrenceDays') ?? []
 
+  // Only reset the form when the panel transitions from closed → open.
+  // This prevents toggling isRecurring (or any other internal state change)
+  // from triggering a full reset and wiping what the user has already typed.
+  const wasOpen = useRef(false)
   useEffect(() => {
+    const justOpened = taskFormOpen && !wasOpen.current
+    wasOpen.current = taskFormOpen
+
+    if (!justOpened) return
+
     if (editingTask) {
       reset({
         title: editingTask.title,
@@ -115,7 +124,7 @@ export function TaskForm() {
       })
     }
     setInvitedFriendIds([])
-  }, [editingTask, taskFormPrefillDate, reset])
+  }, [taskFormOpen, editingTask, taskFormPrefillDate, reset])
 
   const toggleRecurrenceDay = (day: RecurrenceDay) => {
     const current = recurrenceDays as RecurrenceDay[]
