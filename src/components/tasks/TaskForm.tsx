@@ -46,7 +46,6 @@ const schema = z
     status: z.enum(['todo', 'in_progress', 'done']),
   })
   .superRefine((data, ctx) => {
-    // End time must be after start time if both provided
     if (data.startTime && data.endTime && data.endTime <= data.startTime) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -54,7 +53,6 @@ const schema = z
         path: ['endTime'],
       })
     }
-    // Recurring tasks must have at least one day selected
     if (data.isRecurring && (!data.recurrenceDays || data.recurrenceDays.length === 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -66,6 +64,16 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>
 
+// ─── Shared input class ───────────────────────────────────────────────────────
+// Explicit text colour + bg so iOS Safari renders them correctly
+const nativeInputCls = cn(
+  'w-full rounded-lg border bg-surface px-3 py-2.5 text-sm text-zinc-100 transition-colors',
+  'focus:outline-none focus:ring-2 focus:ring-brand-500/50',
+  'border-surface-border hover:border-zinc-600',
+  // iOS Safari needs explicit colour-scheme so the native picker matches dark UI
+  '[color-scheme:dark]'
+)
+
 // ─── TaskForm ─────────────────────────────────────────────────────────────────
 
 export function TaskForm() {
@@ -75,7 +83,6 @@ export function TaskForm() {
   const { mutateAsync: updateTask, isPending: isUpdating } = useUpdateTask()
   const { mutateAsync: sendTaskInvites } = useSendTaskInvites()
 
-  // Invited friend IDs — only used when creating a new task
   const [invitedFriendIds, setInvitedFriendIds] = useState<string[]>([])
 
   const editingTask = editingTaskId ? tasks.find((t) => t.id === editingTaskId) : null
@@ -108,14 +115,12 @@ export function TaskForm() {
   const isRecurring = watch('isRecurring')
   const recurrenceDays = watch('recurrenceDays') ?? []
 
-  // Clear due date when recurring is toggled on
   useEffect(() => {
     if (isRecurring) {
       setValue('dueDate', '', { shouldValidate: false })
     }
   }, [isRecurring, setValue])
 
-  // Populate form when editing or prefilling date
   useEffect(() => {
     if (editingTask) {
       reset({
@@ -176,14 +181,11 @@ export function TaskForm() {
       } else {
         const newTask = await createTask(taskValues)
 
-        // newTask is null for recurring tasks (multiple rows inserted, no single return)
         if (invitedFriendIds.length > 0 && newTask?.id) {
           try {
             await sendTaskInvites({ taskId: newTask.id, inviteeIds: invitedFriendIds })
             const count = invitedFriendIds.length
-            toast.success(
-              `Task created! Invite sent to ${count} friend${count > 1 ? 's' : ''}.`
-            )
+            toast.success(`Task created! Invite sent to ${count} friend${count > 1 ? 's' : ''}.`)
           } catch {
             toast.success('Task created!')
             toast.error('Could not send all invites. Please try again from the task.')
@@ -211,23 +213,36 @@ export function TaskForm() {
             onClick={closeTaskForm}
           />
 
-          {/* Slide-over panel */}
+          {/* Panel:
+              - Mobile (< sm): bottom sheet that slides up from the bottom
+              - sm+: right slide-over panel */}
           <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed right-0 top-0 z-[60] flex h-full w-full max-w-md flex-col overflow-hidden border-l border-surface-border bg-surface-card shadow-2xl"
-            style={{ maxWidth: 'min(448px, 100vw)', width: '100vw' }}
+            className={cn(
+              // Mobile: bottom sheet
+              'fixed bottom-0 left-0 right-0 z-[60] flex max-h-[92dvh] flex-col',
+              'rounded-t-2xl border-t border-surface-border bg-surface-card shadow-2xl',
+              // sm+: right slide-over (override the bottom-sheet positioning)
+              'sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:max-h-full sm:w-full sm:max-w-md sm:rounded-none sm:rounded-l-none sm:border-l sm:border-t-0',
+            )}
+            style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
           >
+            {/* Drag handle — mobile only */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="h-1 w-10 rounded-full bg-zinc-600" />
+            </div>
+
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-surface-border px-4 py-4 sm:px-6">
+            <div className="flex items-center justify-between border-b border-surface-border px-4 py-3 sm:py-4 sm:px-6">
               <h2 className="text-base font-semibold text-zinc-100">
                 {isEditing ? 'Edit Task' : 'New Task'}
               </h2>
               <button
                 onClick={closeTaskForm}
-                className="rounded-lg p-1 text-zinc-400 transition-colors hover:bg-surface-elevated hover:text-zinc-100"
+                className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-surface-elevated hover:text-zinc-100"
               >
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -235,8 +250,12 @@ export function TaskForm() {
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="flex flex-1 flex-col gap-5 overflow-y-auto px-4 py-6 sm:px-6">
+            {/* Scrollable form body */}
+            <form
+              onSubmit={handleSubmit(onSubmit)}
+              className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 sm:gap-5 sm:px-6 sm:py-6"
+            >
+              {/* Title */}
               <Input
                 label="Title *"
                 placeholder="What needs to be done?"
@@ -244,6 +263,7 @@ export function TaskForm() {
                 {...register('title')}
               />
 
+              {/* Description */}
               <Textarea
                 label="Description"
                 placeholder="Add more details..."
@@ -251,48 +271,41 @@ export function TaskForm() {
                 {...register('description')}
               />
 
-              {/* Due Date — hidden when recurring is on (recurring tasks have no fixed due date) */}
+              {/* Due Date — hidden when recurring */}
               {!isRecurring && (
-                <Input
-                  label="Due Date"
-                  type="date"
-                  error={errors.dueDate?.message}
-                  {...register('dueDate')}
-                />
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-zinc-400">Due Date</label>
+                  <input
+                    type="date"
+                    className={nativeInputCls}
+                    {...register('dueDate')}
+                  />
+                  {errors.dueDate && (
+                    <p className="text-[11px] text-red-400">{errors.dueDate.message}</p>
+                  )}
+                </div>
               )}
 
-              {/* ── Time section ── */}
+              {/* Time */}
               <div className="flex flex-col gap-1.5">
                 <p className="text-xs font-medium text-zinc-400">Time (optional)</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex min-w-0 flex-col gap-1">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
                     <label className="text-[11px] text-zinc-500">Start</label>
                     <input
                       type="time"
-                      className={cn(
-                        'w-full min-w-0 rounded-lg border bg-surface px-2 py-2 text-sm text-zinc-100 transition-colors',
-                        'focus:outline-none focus:ring-2 focus:ring-brand-500/50',
-                        errors.startTime
-                          ? 'border-red-500/50 focus:ring-red-500/30'
-                          : 'border-surface-border hover:border-zinc-600'
-                      )}
+                      className={nativeInputCls}
                       {...register('startTime')}
                     />
                     {errors.startTime && (
                       <p className="text-[11px] text-red-400">{errors.startTime.message}</p>
                     )}
                   </div>
-                  <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex flex-col gap-1">
                     <label className="text-[11px] text-zinc-500">End</label>
                     <input
                       type="time"
-                      className={cn(
-                        'w-full min-w-0 rounded-lg border bg-surface px-2 py-2 text-sm text-zinc-100 transition-colors',
-                        'focus:outline-none focus:ring-2 focus:ring-brand-500/50',
-                        errors.endTime
-                          ? 'border-red-500/50 focus:ring-red-500/30'
-                          : 'border-surface-border hover:border-zinc-600'
-                      )}
+                      className={nativeInputCls}
                       {...register('endTime')}
                     />
                     {errors.endTime && (
@@ -302,9 +315,8 @@ export function TaskForm() {
                 </div>
               </div>
 
-              {/* ── Recurring section ── */}
+              {/* Recurring */}
               <div className="flex flex-col gap-3 rounded-xl border border-surface-border bg-surface p-4">
-                {/* Toggle */}
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-zinc-200">Recurring</p>
@@ -335,7 +347,6 @@ export function TaskForm() {
                   />
                 </div>
 
-                {/* Recurrence options — shown when toggled on */}
                 <AnimatePresence>
                   {isRecurring && (
                     <motion.div
@@ -346,7 +357,7 @@ export function TaskForm() {
                       className="overflow-hidden"
                     >
                       <div className="flex flex-col gap-3 pt-1">
-                        {/* Day-of-week pills */}
+                        {/* Day pills */}
                         <div className="flex flex-col gap-1.5">
                           <p className="text-xs text-zinc-500">Repeat on</p>
                           <div className="flex gap-1.5">
@@ -358,7 +369,7 @@ export function TaskForm() {
                                   type="button"
                                   onClick={() => toggleRecurrenceDay(key)}
                                   className={cn(
-                                    'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-all duration-150',
+                                    'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-all duration-150',
                                     isSelected
                                       ? 'bg-brand-500 text-white'
                                       : 'bg-surface-elevated text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
@@ -382,11 +393,7 @@ export function TaskForm() {
                           <label className="text-xs text-zinc-500">Repeat until (optional)</label>
                           <input
                             type="date"
-                            className={cn(
-                              'w-full rounded-lg border bg-surface px-3 py-2 text-sm text-zinc-100 transition-colors',
-                              'focus:outline-none focus:ring-2 focus:ring-brand-500/50',
-                              'border-surface-border hover:border-zinc-600'
-                            )}
+                            className={nativeInputCls}
                             {...register('recurrenceEndDate')}
                           />
                         </div>
@@ -396,6 +403,7 @@ export function TaskForm() {
                 </AnimatePresence>
               </div>
 
+              {/* Priority */}
               <Select
                 label="Priority"
                 options={[
@@ -407,6 +415,7 @@ export function TaskForm() {
                 {...register('priority')}
               />
 
+              {/* Status */}
               <Select
                 label="Status"
                 options={[
@@ -418,7 +427,7 @@ export function TaskForm() {
                 {...register('status')}
               />
 
-              {/* Invite friends — only shown when creating a new task */}
+              {/* Invite friends */}
               {!isEditing && (
                 <div className="flex flex-col gap-1.5">
                   <InviteFriendPicker
@@ -433,7 +442,11 @@ export function TaskForm() {
                 </div>
               )}
 
-              <div className="mt-auto flex gap-3 pt-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+              {/* Footer buttons — sticky at bottom with safe-area padding */}
+              <div
+                className="mt-auto flex gap-3 pt-4"
+                style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+              >
                 <Button type="button" variant="secondary" className="flex-1" onClick={closeTaskForm}>
                   Cancel
                 </Button>
