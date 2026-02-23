@@ -213,7 +213,7 @@ export function TaskForm() {
             exit={{ y: '100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             className={cn(
-              'fixed bottom-0 left-0 right-0 z-[60] flex h-[96dvh] flex-col',
+              'fixed bottom-0 left-0 right-0 z-[60] flex h-[96dvh] flex-col overflow-x-hidden',
               'rounded-t-2xl border border-surface-border bg-surface-card shadow-2xl',
               'sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:w-full sm:max-w-md sm:rounded-none sm:border-l sm:border-t-0',
             )}
@@ -265,7 +265,7 @@ export function TaskForm() {
               )}
 
               {/* Scrollable body */}
-              <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+              <div className="flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-5 py-5">
 
                 {/* Description */}
                 <SectionRow icon={
@@ -293,7 +293,12 @@ export function TaskForm() {
                     </svg>
                   }>
                     <label className="mb-1 block text-xs font-medium text-zinc-500">Due Date</label>
-                    <input type="date" className={nativeInputCls} style={nativeInputStyle} {...register('dueDate')} />
+                    <input
+                      type="date"
+                      className={cn(nativeInputCls, 'max-w-[200px]')}
+                      style={nativeInputStyle}
+                      {...register('dueDate')}
+                    />
                     {errors.dueDate && <p className="mt-0.5 text-[11px] text-red-400">{errors.dueDate.message}</p>}
                   </SectionRow>
                 )}
@@ -306,15 +311,25 @@ export function TaskForm() {
                   </svg>
                 }>
                   <label className="mb-1 block text-xs font-medium text-zinc-500">Time (optional)</label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-3">
                     <div>
                       <p className="mb-1 text-[11px] text-zinc-600">Start</p>
-                      <input type="time" className={nativeInputCls} style={nativeInputStyle} {...register('startTime')} />
+                      <input
+                        type="time"
+                        className={cn(nativeInputCls, 'max-w-[200px]')}
+                        style={nativeInputStyle}
+                        {...register('startTime')}
+                      />
                       {errors.startTime && <p className="mt-0.5 text-[11px] text-red-400">{errors.startTime.message}</p>}
                     </div>
                     <div>
                       <p className="mb-1 text-[11px] text-zinc-600">End</p>
-                      <input type="time" className={nativeInputCls} style={nativeInputStyle} {...register('endTime')} />
+                      <input
+                        type="time"
+                        className={cn(nativeInputCls, 'max-w-[200px]')}
+                        style={nativeInputStyle}
+                        {...register('endTime')}
+                      />
                       {errors.endTime && <p className="mt-0.5 text-[11px] text-red-400">{errors.endTime.message}</p>}
                     </div>
                   </div>
@@ -371,7 +386,12 @@ export function TaskForm() {
                           </div>
                           <div>
                             <p className="mb-1 text-xs text-zinc-600">Repeat until (optional)</p>
-                            <input type="date" className={nativeInputCls} style={nativeInputStyle} {...register('recurrenceEndDate')} />
+                            <input
+                              type="date"
+                              className={cn(nativeInputCls, 'max-w-[200px]')}
+                              style={nativeInputStyle}
+                              {...register('recurrenceEndDate')}
+                            />
                           </div>
                         </div>
                       </motion.div>
@@ -466,29 +486,44 @@ export function TaskForm() {
               </div>
 
               {/* Desktop scrollable body */}
-              <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-6">
+              <div className="flex flex-1 flex-col gap-5 overflow-x-hidden overflow-y-auto px-6 py-6">
                 <Input label="Title *" placeholder="What needs to be done?" error={errors.title?.message} {...register('title')} />
                 <Textarea label="Description" placeholder="Add more details..." error={errors.description?.message} {...register('description')} />
 
                 {!isRecurring && (
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-medium text-zinc-400">Due Date</label>
-                    <input type="date" className={nativeInputCls} style={nativeInputStyle} {...register('dueDate')} />
+                    <input
+                      type="date"
+                      className={cn(nativeInputCls, 'max-w-[220px]')}
+                      style={nativeInputStyle}
+                      {...register('dueDate')}
+                    />
                     {errors.dueDate && <p className="text-[11px] text-red-400">{errors.dueDate.message}</p>}
                   </div>
                 )}
 
                 <div className="flex flex-col gap-1.5">
                   <p className="text-xs font-medium text-zinc-400">Time (optional)</p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-1">
                       <label className="text-[11px] text-zinc-500">Start</label>
-                      <input type="time" className={nativeInputCls} style={nativeInputStyle} {...register('startTime')} />
+                      <input
+                        type="time"
+                        className={cn(nativeInputCls, 'max-w-[220px]')}
+                        style={nativeInputStyle}
+                        {...register('startTime')}
+                      />
                       {errors.startTime && <p className="text-[11px] text-red-400">{errors.startTime.message}</p>}
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[11px] text-zinc-500">End</label>
-                      <input type="time" className={nativeInputCls} style={nativeInputStyle} {...register('endTime')} />
+                      <input
+                        type="time"
+                        className={cn(nativeInputCls, 'max-w-[220px]')}
+                        style={nativeInputStyle}
+                        {...register('endTime')}
+                      />
                       {errors.endTime && <p className="text-[11px] text-red-400">{errors.endTime.message}</p>}
                     </div>
                   </div>
@@ -539,7 +574,12 @@ export function TaskForm() {
                           </div>
                           <div className="flex flex-col gap-1">
                             <label className="text-xs text-zinc-500">Repeat until (optional)</label>
-                            <input type="date" className={nativeInputCls} style={nativeInputStyle} {...register('recurrenceEndDate')} />
+                            <input
+                              type="date"
+                              className={cn(nativeInputCls, 'max-w-[220px]')}
+                              style={nativeInputStyle}
+                              {...register('recurrenceEndDate')}
+                            />
                           </div>
                         </div>
                       </motion.div>
