@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useAcceptedFriends } from '@/hooks/useFriends'
 import { AvatarCircle } from '@/components/friends/FriendCard'
 import { cn } from '@/lib/utils'
@@ -13,6 +13,7 @@ interface InviteFriendPickerProps {
 export function InviteFriendPicker({ onChange, selectedIds }: InviteFriendPickerProps) {
   const [open, setOpen] = useState(false)
   const { data: friends = [], isLoading } = useAcceptedFriends()
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const toggleFriend = (friendId: string) => {
     if (selectedIds.includes(friendId)) {
@@ -22,14 +23,25 @@ export function InviteFriendPicker({ onChange, selectedIds }: InviteFriendPicker
     }
   }
 
+  const handleToggleOpen = () => {
+    const next = !open
+    setOpen(next)
+    if (next) {
+      // Scroll the container into view after the dropdown renders
+      setTimeout(() => {
+        containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 60)
+    }
+  }
+
   const selectedCount = selectedIds.length
 
   return (
-    <div className="flex flex-col gap-2">
+    <div ref={containerRef} className="flex flex-col gap-2">
       {/* Accordion toggle */}
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={handleToggleOpen}
         className="flex w-full items-center justify-between rounded-xl border border-surface-border bg-surface-elevated px-4 py-3 text-left transition-colors hover:border-zinc-600"
       >
         <div className="flex items-center gap-2">
@@ -78,7 +90,8 @@ export function InviteFriendPicker({ onChange, selectedIds }: InviteFriendPicker
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-surface-border">
+            /* Scrollable list — shows ~5 rows then scrolls internally */
+            <ul className="max-h-[280px] overflow-y-auto divide-y divide-surface-border overscroll-contain">
               {friends.map((friend) => {
                 const isSelected = selectedIds.includes(friend.friendId)
                 const displayName = friend.username ?? friend.email.split('@')[0]

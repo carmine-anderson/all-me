@@ -94,10 +94,6 @@ export function TaskForm() {
   const recurrenceDays = watch('recurrenceDays') ?? []
 
   useEffect(() => {
-    if (isRecurring) setValue('dueDate', '', { shouldValidate: false })
-  }, [isRecurring, setValue])
-
-  useEffect(() => {
     if (editingTask) {
       reset({
         title: editingTask.title,
