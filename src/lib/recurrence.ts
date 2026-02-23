@@ -1,42 +1,25 @@
 import type { Task, RecurrenceDay } from '@/types'
 
-/**
- * Extract the real parent task UUID from a virtual instance ID.
- * Virtual IDs have the format: "virtual:{realUUID}:{YYYY-MM-DD}"
- * e.g. "virtual:550e8400-e29b-41d4-a716-446655440000:2026-02-25"
- */
-export function getRealTaskId(id: string): string {
-  if (!id.startsWith('virtual:')) return id
-  // Split on ':' → ['virtual', uuid, 'YYYY-MM-DD']
-  // UUID has no colons, date has no colons, so index 1 is always the UUID
-  const parts = id.split(':')
-  return parts[1] // the UUID
-}
-
 // Maps JS Date.getDay() (0=Sun) to RecurrenceDay strings
 const DAY_INDEX_TO_KEY: RecurrenceDay[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 
 /**
- * Given a recurring task and a date window [windowStart, windowEnd] (YYYY-MM-DD inclusive),
- * returns an array of virtual task instances — one per matching recurrence date.
+ * Given a recurring task template and a date window [windowStart, windowEnd]
+ * (YYYY-MM-DD inclusive), returns an array of YYYY-MM-DD strings for every
+ * day in the window that matches the task's recurrence schedule.
  *
- * Virtual instances have:
- *  - id prefixed with `virtual:${task.id}:${dateStr}` (never persisted)
- *  - dueDate set to the specific occurrence date
- *  - isVirtual = true
- *  - all other fields copied from the parent task
+ * Used when creating a recurring task to pre-generate all occurrence rows.
  */
-export function expandRecurringTask(
-  task: Task,
+export function generateOccurrenceDates(
+  task: Pick<Task, 'recurrenceDays' | 'recurrenceEndDate' | 'createdAt'>,
   windowStart: string,
   windowEnd: string
-): Task[] {
-  if (!task.isRecurring || task.recurrenceDays.length === 0) return []
+): string[] {
+  if (task.recurrenceDays.length === 0) return []
 
   const recurrenceDaySet = new Set(task.recurrenceDays)
 
-  // Effective start: the later of windowStart and task.createdAt date
-  // (task.dueDate is not used for recurring tasks — they have no fixed due date)
+  // Effective start: the later of windowStart and task creation date
   const taskOrigin = task.createdAt ? task.createdAt.slice(0, 10) : windowStart
   const effectiveStart = taskOrigin > windowStart ? taskOrigin : windowStart
 
@@ -48,27 +31,19 @@ export function expandRecurringTask(
 
   if (effectiveStart > effectiveEnd) return []
 
-  const instances: Task[] = []
-
-  // Walk day by day through the window
+  const dates: string[] = []
   const cursor = parseDateStr(effectiveStart)
   const end = parseDateStr(effectiveEnd)
 
   while (cursor <= end) {
     const dayKey = DAY_INDEX_TO_KEY[cursor.getDay()]
     if (recurrenceDaySet.has(dayKey)) {
-      const dateStr = toDateStr(cursor)
-      instances.push({
-        ...task,
-        id: `virtual:${task.id}:${dateStr}`,
-        dueDate: dateStr,
-        isVirtual: true,
-      })
+      dates.push(toDateStr(cursor))
     }
     cursor.setDate(cursor.getDate() + 1)
   }
 
-  return instances
+  return dates
 }
 
 /** Parse a YYYY-MM-DD string into a local Date (midnight) */

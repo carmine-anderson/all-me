@@ -176,7 +176,8 @@ export function TaskForm() {
       } else {
         const newTask = await createTask(taskValues)
 
-        if (invitedFriendIds.length > 0) {
+        // newTask is null for recurring tasks (multiple rows inserted, no single return)
+        if (invitedFriendIds.length > 0 && newTask?.id) {
           try {
             await sendTaskInvites({ taskId: newTask.id, inviteeIds: invitedFriendIds })
             const count = invitedFriendIds.length
@@ -216,8 +217,8 @@ export function TaskForm() {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed right-0 top-0 z-[60] flex h-full w-full max-w-md flex-col border-l border-surface-border bg-surface-card shadow-2xl"
-            style={{ maxWidth: 'min(448px, 100vw)' }}
+            className="fixed right-0 top-0 z-[60] flex h-full w-full max-w-md flex-col overflow-hidden border-l border-surface-border bg-surface-card shadow-2xl"
+            style={{ maxWidth: 'min(448px, 100vw)', width: '100vw' }}
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-surface-border px-4 py-4 sm:px-6">

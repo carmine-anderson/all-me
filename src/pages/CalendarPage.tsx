@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTasks } from '@/hooks/useTasks'
 import { useUIStore } from '@/store/uiStore'
-import { expandRecurringTask } from '@/lib/recurrence'
 import { DayPanel } from '@/components/calendar/DayPanel'
 import { TaskDetailPopup } from '@/components/calendar/TaskDetailPopup'
 import { TaskForm } from '@/components/tasks/TaskForm'
@@ -200,12 +199,7 @@ function DayCell({ dateStr, isCurrentMonth, tasks, isToday, isSelected, onDayCli
             <TaskChip
               task={task}
               onClick={(e) => {
-                if (task.isVirtual) {
-                  e.stopPropagation()
-                  onDayClick(dateStr)
-                } else {
-                  onTaskClick(task.id, e)
-                }
+                onTaskClick(task.id, e)
               }}
             />
           </div>
@@ -260,16 +254,9 @@ export function CalendarPage() {
     const map: Record<string, Task[]> = {}
 
     for (const task of tasks) {
-      if (task.isRecurring && task.recurrenceDays.length > 0) {
-        // Recurring tasks: expand into virtual instances across the month window.
-        // The original task row has no fixed due date — all appearances are virtual.
-        const virtuals = expandRecurringTask(task, windowStart, windowEnd)
-        for (const v of virtuals) {
-          if (!map[v.dueDate!]) map[v.dueDate!] = []
-          map[v.dueDate!].push(v)
-        }
-      } else if (task.dueDate) {
-        // Non-recurring task: show on its due date only
+      // All tasks (including recurring occurrences) now have a real due_date row.
+      // Just bucket by due_date — no virtual expansion needed.
+      if (task.dueDate && task.dueDate >= windowStart && task.dueDate <= windowEnd) {
         if (!map[task.dueDate]) map[task.dueDate] = []
         map[task.dueDate].push(task)
       }

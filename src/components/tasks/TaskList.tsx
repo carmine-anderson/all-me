@@ -13,9 +13,10 @@ type PriorityFilter = TaskPriority | 'all'
 interface TaskListProps {
   limit?: number
   showFilters?: boolean
+  hideDone?: boolean
 }
 
-export function TaskList({ limit, showFilters = true }: TaskListProps) {
+export function TaskList({ limit, showFilters = true, hideDone = false }: TaskListProps) {
   const { data: tasks = [], isLoading } = useTasks()
   const openTaskForm = useUIStore((s) => s.openTaskForm)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -23,6 +24,8 @@ export function TaskList({ limit, showFilters = true }: TaskListProps) {
 
   const filtered = useMemo(() => {
     let result = tasks
+    // When hideDone is true (dashboard view), exclude completed tasks entirely
+    if (hideDone) result = result.filter((t) => t.status !== 'done')
     if (statusFilter !== 'all') result = result.filter((t) => t.status === statusFilter)
     if (priorityFilter !== 'all') result = result.filter((t) => t.priority === priorityFilter)
     // Always push completed tasks to the bottom
@@ -33,7 +36,7 @@ export function TaskList({ limit, showFilters = true }: TaskListProps) {
     })
     if (limit) result = result.slice(0, limit)
     return result
-  }, [tasks, statusFilter, priorityFilter, limit])
+  }, [tasks, statusFilter, priorityFilter, limit, hideDone])
 
   const statusOptions: { value: StatusFilter; label: string }[] = [
     { value: 'all', label: 'All' },

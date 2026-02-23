@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { format, startOfWeek, addDays, addWeeks, isToday, startOfDay } from 'date-fns'
 import { useTasks } from '@/hooks/useTasks'
 import { useUIStore } from '@/store/uiStore'
-import { expandRecurringTask } from '@/lib/recurrence'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
@@ -41,23 +40,17 @@ export function WeeklyCalendar() {
     [weekStart]
   )
 
+  // Group real task rows by their due_date — no virtual expansion needed
   const tasksByDate = useMemo(() => {
     const map = new Map<string, Task[]>()
     const windowStart = format(days[0], 'yyyy-MM-dd')
     const windowEnd = format(days[6], 'yyyy-MM-dd')
 
     for (const task of tasks) {
-      if (task.isRecurring && task.recurrenceDays.length > 0) {
-        const virtuals = expandRecurringTask(task, windowStart, windowEnd)
-        for (const v of virtuals) {
-          if (!v.dueDate) continue
-          const existing = map.get(v.dueDate) ?? []
-          map.set(v.dueDate, [...existing, v])
-        }
-      } else if (task.dueDate) {
-        const existing = map.get(task.dueDate) ?? []
-        map.set(task.dueDate, [...existing, task])
-      }
+      if (!task.dueDate) continue
+      if (task.dueDate < windowStart || task.dueDate > windowEnd) continue
+      const existing = map.get(task.dueDate) ?? []
+      map.set(task.dueDate, [...existing, task])
     }
     return map
   }, [tasks, days])
@@ -218,6 +211,7 @@ export function WeeklyCalendar() {
                               )}
                             />
                             <span className="truncate text-xs leading-tight text-zinc-300">
+                              {task.isRecurring && <span className="mr-0.5 opacity-50">↻</span>}
                               {task.title}
                             </span>
                           </div>
@@ -325,6 +319,7 @@ export function WeeklyCalendar() {
                               )}
                             />
                             <span className="truncate text-[10px] leading-tight text-zinc-300">
+                              {task.isRecurring && <span className="mr-0.5 opacity-50">↻</span>}
                               {task.title}
                             </span>
                           </div>

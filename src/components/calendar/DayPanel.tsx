@@ -1,12 +1,13 @@
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/Button'
-import { useToggleTaskStatus, useDeleteTask, useTasks } from '@/hooks/useTasks'
+import { useToggleTaskStatus, useDeleteTask, useTasks, useCompleteAllRecurringTasks, useDeleteAllRecurringTasks } from '@/hooks/useTasks'
 import { useUIStore } from '@/store/uiStore'
-import { timeToMinutes, formatTimeRange, expandRecurringTask, getRealTaskId } from '@/lib/recurrence'
+import { timeToMinutes, formatTimeRange } from '@/lib/recurrence'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 import toast from 'react-hot-toast'
+import { RecurringCompleteDialog } from '@/components/tasks/RecurringCompleteDialog'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -131,11 +132,9 @@ function TimelineBlock({ layout, onDetail }: TimelineBlockProps) {
   const colorClass = blockColors[task.priority][task.status]
   const isShort = height < 36
 
-  const realId = getRealTaskId(task.id)
-
   return (
     <button
-      onClick={() => onDetail(realId)}
+      onClick={() => onDetail(task.id)}
       style={{
         top: `${top}px`,
         height: `${height}px`,
@@ -168,11 +167,11 @@ interface AllDayRowProps {
   task: Task
   onDetail: (id: string) => void
   onEdit: (id: string) => void
-  onDelete: (id: string) => void
-  onToggle: (id: string, status: Task['status']) => void
+  onToggle: (task: Task) => void
+  onDelete: (task: Task) => void
 }
 
-function AllDayRow({ task, onDetail, onEdit, onDelete, onToggle }: AllDayRowProps) {
+function AllDayRow({ task, onDetail, onEdit, onToggle, onDelete }: AllDayRowProps) {
   const isDone = task.status === 'done'
   const dotColor = { low: 'bg-sky-400', medium: 'bg-amber-400', high: 'bg-red-400' }
 
@@ -187,18 +186,19 @@ function AllDayRow({ task, onDetail, onEdit, onDelete, onToggle }: AllDayRowProp
     >
       <div className={cn('h-2 w-2 flex-shrink-0 rounded-full', dotColor[task.priority])} />
       <button
-        onClick={() => onDetail(getRealTaskId(task.id))}
+        onClick={() => onDetail(task.id)}
         className={cn(
           'flex-1 truncate text-left text-xs font-medium',
           isDone ? 'text-zinc-500 line-through' : 'text-zinc-200 hover:text-brand-400'
         )}
       >
+        {task.isRecurring && <span className="mr-1 opacity-60">↻</span>}
         {task.title}
       </button>
       {/* Quick actions */}
       <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <button
-          onClick={() => onToggle(getRealTaskId(task.id), task.status)}
+          onClick={() => onToggle(task)}
           className="rounded p-0.5 text-zinc-500 hover:text-emerald-400"
           title={isDone ? 'Reopen' : 'Complete'}
         >
@@ -207,7 +207,7 @@ function AllDayRow({ task, onDetail, onEdit, onDelete, onToggle }: AllDayRowProp
           </svg>
         </button>
         <button
-          onClick={() => onEdit(getRealTaskId(task.id))}
+          onClick={() => onEdit(task.id)}
           className="rounded p-0.5 text-zinc-500 hover:text-zinc-300"
           title="Edit"
         >
@@ -217,7 +217,7 @@ function AllDayRow({ task, onDetail, onEdit, onDelete, onToggle }: AllDayRowProp
           </svg>
         </button>
         <button
-          onClick={() => onDelete(getRealTaskId(task.id))}
+          onClick={() => onDelete(task)}
           className="rounded p-0.5 text-zinc-500 hover:text-red-400"
           title="Delete"
         >
@@ -245,28 +245,19 @@ export function DayPanel() {
   const { data: tasks = [] } = useTasks()
   const { mutate: toggleStatus } = useToggleTaskStatus()
   const { mutate: deleteTask } = useDeleteTask()
+  const { mutate: completeAll } = useCompleteAllRecurringTasks()
+  const { mutate: deleteAll } = useDeleteAllRecurringTasks()
+
+  // State for the recurring dialogs
+  const [completeDialog, setCompleteDialog] = useState<{ task: Task } | null>(null)
+  const [deleteDialog, setDeleteDialog] = useState<{ task: Task } | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Build the full task list for the selected day:
-  // - Non-recurring tasks whose dueDate matches
-  // - Virtual instances from recurring tasks that fall on this day
+  // Build the task list for the selected day using real due_date rows
   const dayTasks = useMemo(() => {
     if (!calendarSelectedDay) return []
-
-    const result: Task[] = []
-
-    for (const task of tasks) {
-      if (task.isRecurring && task.recurrenceDays.length > 0) {
-        // Expand just for this single day window
-        const virtuals = expandRecurringTask(task, calendarSelectedDay, calendarSelectedDay)
-        result.push(...virtuals)
-      } else if (task.dueDate === calendarSelectedDay) {
-        result.push(task)
-      }
-    }
-
-    return result
+    return tasks.filter((t) => t.dueDate === calendarSelectedDay)
   }, [tasks, calendarSelectedDay])
 
   const timedTasks = useMemo(() => dayTasks.filter((t) => !!t.startTime), [dayTasks])
@@ -297,12 +288,19 @@ export function DayPanel() {
     useUIStore.getState().openTaskForm(undefined, calendarSelectedDay)
   }
 
-  const handleToggle = (id: string, currentStatus: Task['status']) => {
+  // Called when the toggle button is clicked on a task row
+  const handleToggle = (task: Task) => {
+    // If marking done and it's a recurring task with a group, show choice dialog
+    if (task.status !== 'done' && task.isRecurring && task.recurrenceGroupId) {
+      setCompleteDialog({ task })
+      return
+    }
+
     toggleStatus(
-      { id, currentStatus },
+      { id: task.id, currentStatus: task.status, isShared: task.isShared },
       {
         onSuccess: () => {
-          if (currentStatus !== 'done') toast.success('Task completed! 🎉')
+          if (task.status !== 'done') toast.success('Task completed! 🎉')
           else toast.success('Task reopened')
         },
         onError: () => toast.error('Failed to update task'),
@@ -310,11 +308,60 @@ export function DayPanel() {
     )
   }
 
-  const handleDelete = (id: string) => {
-    deleteTask(id, {
+  // Called when the delete button is clicked on a task row
+  const handleDeleteClick = (task: Task) => {
+    if (task.isRecurring && task.recurrenceGroupId) {
+      setDeleteDialog({ task })
+      return
+    }
+    deleteTask(task.id, {
       onSuccess: () => toast.success('Task deleted'),
       onError: () => toast.error('Failed to delete task'),
     })
+  }
+
+  // Complete dialog handlers
+  const handleCompleteOne = () => {
+    if (!completeDialog) return
+    const { task } = completeDialog
+    toggleStatus(
+      { id: task.id, currentStatus: task.status, isShared: task.isShared },
+      {
+        onSuccess: () => toast.success('Occurrence completed! 🎉'),
+        onError: () => toast.error('Failed to update task'),
+      }
+    )
+  }
+
+  const handleCompleteAll = () => {
+    if (!completeDialog?.task.recurrenceGroupId) return
+    completeAll(
+      { recurrenceGroupId: completeDialog.task.recurrenceGroupId },
+      {
+        onSuccess: () => toast.success('All occurrences completed! 🎉'),
+        onError: () => toast.error('Failed to complete all occurrences'),
+      }
+    )
+  }
+
+  // Delete dialog handlers
+  const handleDeleteOne = () => {
+    if (!deleteDialog) return
+    deleteTask(deleteDialog.task.id, {
+      onSuccess: () => toast.success('Task deleted'),
+      onError: () => toast.error('Failed to delete task'),
+    })
+  }
+
+  const handleDeleteAll = () => {
+    if (!deleteDialog?.task.recurrenceGroupId) return
+    deleteAll(
+      { recurrenceGroupId: deleteDialog.task.recurrenceGroupId },
+      {
+        onSuccess: () => toast.success('All occurrences deleted'),
+        onError: () => toast.error('Failed to delete all occurrences'),
+      }
+    )
   }
 
   // Current time indicator position
@@ -322,164 +369,186 @@ export function DayPanel() {
   const currentTimeTop = currentMinutes * PX_PER_MIN
 
   return (
-    <AnimatePresence>
-      {calendarDayPanelOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-            onClick={closeCalendarDayPanel}
-          />
+    <>
+      {completeDialog && (
+        <RecurringCompleteDialog
+          open={true}
+          mode="complete"
+          taskTitle={completeDialog.task.title}
+          onThisOne={handleCompleteOne}
+          onAllOccurrences={handleCompleteAll}
+          onClose={() => setCompleteDialog(null)}
+        />
+      )}
+      {deleteDialog && (
+        <RecurringCompleteDialog
+          open={true}
+          mode="delete"
+          taskTitle={deleteDialog.task.title}
+          onThisOne={handleDeleteOne}
+          onAllOccurrences={handleDeleteAll}
+          onClose={() => setDeleteDialog(null)}
+        />
+      )}
+      <AnimatePresence>
+        {calendarDayPanelOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+              onClick={closeCalendarDayPanel}
+            />
 
-          {/* Slide-over */}
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[100vw] flex-col border-l border-surface-border bg-surface-card shadow-2xl sm:max-w-sm md:max-w-md"
-          >
-            {/* ── Header ── */}
-            <div className="flex items-start justify-between border-b border-surface-border px-5 py-4">
-              <div>
-                {heading && (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-base font-semibold text-zinc-100">{heading.weekday}</h2>
-                      {heading.isToday && (
-                        <span className="rounded-full bg-brand-500/20 px-2 py-0.5 text-xs font-medium text-brand-400">
-                          Today
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-0.5 text-xs text-zinc-500">{heading.full}</p>
-                  </>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleAddTask}>
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add
-                </Button>
-                <button
-                  onClick={closeCalendarDayPanel}
-                  className="rounded-lg p-1 text-zinc-400 transition-colors hover:bg-surface-elevated hover:text-zinc-100"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {/* ── All-day strip ── */}
-            {allDayTasks.length > 0 && (
-              <div className="border-b border-surface-border bg-surface px-4 py-2">
-                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
-                  All day · {allDayTasks.length}
-                </p>
-                <div className="flex flex-col gap-1">
-                  {allDayTasks.map((task) => (
-                    <AllDayRow
-                      key={task.id}
-                      task={task}
-                      onDetail={openTaskDetail}
-                      onEdit={openTaskForm}
-                      onDelete={handleDelete}
-                      onToggle={handleToggle}
-                    />
-                  ))}
+            {/* Slide-over */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[100vw] flex-col border-l border-surface-border bg-surface-card shadow-2xl sm:max-w-sm md:max-w-md"
+            >
+              {/* ── Header ── */}
+              <div className="flex items-start justify-between border-b border-surface-border px-5 py-4">
+                <div>
+                  {heading && (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base font-semibold text-zinc-100">{heading.weekday}</h2>
+                        {heading.isToday && (
+                          <span className="rounded-full bg-brand-500/20 px-2 py-0.5 text-xs font-medium text-brand-400">
+                            Today
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-zinc-500">{heading.full}</p>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="primary" size="sm" onClick={handleAddTask}>
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add
+                  </Button>
+                  <button
+                    onClick={closeCalendarDayPanel}
+                    className="rounded-lg p-1 text-zinc-400 transition-colors hover:bg-surface-elevated hover:text-zinc-100"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
               </div>
-            )}
 
-            {/* ── 24-hour timeline ── */}
-            <div
-              ref={scrollRef}
-              className="flex-1 overflow-y-auto"
-              style={{ scrollbarWidth: 'thin' }}
-            >
-              {dayTasks.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
-                    <svg className="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
+              {/* ── All-day strip ── */}
+              {allDayTasks.length > 0 && (
+                <div className="border-b border-surface-border bg-surface px-4 py-2">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+                    All day · {allDayTasks.length}
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    {allDayTasks.map((task) => (
+                      <AllDayRow
+                        key={task.id}
+                        task={task}
+                        onDetail={openTaskDetail}
+                        onEdit={openTaskForm}
+                        onToggle={handleToggle}
+                        onDelete={handleDeleteClick}
+                      />
+                    ))}
                   </div>
-                  <p className="text-sm font-medium text-zinc-400">No tasks for this day</p>
-                  <p className="mt-1 text-xs text-zinc-600">Click "Add" to schedule something here.</p>
                 </div>
               )}
 
+              {/* ── 24-hour timeline ── */}
               <div
-                className="relative"
-                style={{ height: `${TOTAL_HEIGHT}px` }}
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto"
+                style={{ scrollbarWidth: 'thin' }}
               >
-                {/* Hour rows */}
-                {HOUR_LABELS.map((label, hour) => (
-                  <div
-                    key={hour}
-                    className="absolute left-0 right-0 flex cursor-pointer hover:bg-brand-500/5"
-                    style={{ top: `${hour * PX_PER_HOUR}px`, height: `${PX_PER_HOUR}px` }}
-                    onClick={() => handleSlotClick(hour)}
-                  >
-                    {/* Hour label */}
-                    <div className="flex w-14 flex-shrink-0 items-start justify-end pr-3 pt-1">
-                      <span className="text-[10px] font-medium text-zinc-600">{label}</span>
+                {dayTasks.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
+                      <svg className="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
                     </div>
-                    {/* Grid line */}
-                    <div className="flex-1 border-t border-surface-border/50" />
-                  </div>
-                ))}
-
-                {/* Half-hour lines */}
-                {Array.from({ length: 24 }, (_, hour) => (
-                  <div
-                    key={`half-${hour}`}
-                    className="absolute left-14 right-0 border-t border-surface-border/20"
-                    style={{ top: `${hour * PX_PER_HOUR + PX_PER_HOUR / 2}px` }}
-                  />
-                ))}
-
-                {/* Current time indicator (today only) */}
-                {heading?.isToday && (
-                  <div
-                    className="absolute left-0 right-0 z-20 flex items-center"
-                    style={{ top: `${currentTimeTop}px` }}
-                  >
-                    <div className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-red-500 ml-11" />
-                    <div className="flex-1 border-t-2 border-red-500" />
+                    <p className="text-sm font-medium text-zinc-400">No tasks for this day</p>
+                    <p className="mt-1 text-xs text-zinc-600">Click "Add" to schedule something here.</p>
                   </div>
                 )}
 
-                {/* Timed task blocks */}
-                <div className="absolute inset-0 left-14 right-2">
-                  {layout.map(({ task, col, totalCols, startMin, endMin }) => (
-                    <TimelineBlock
-                      key={task.id}
-                      layout={{ task, col, totalCols, startMin, endMin }}
-                      onDetail={openTaskDetail}
+                <div
+                  className="relative"
+                  style={{ height: `${TOTAL_HEIGHT}px` }}
+                >
+                  {/* Hour rows */}
+                  {HOUR_LABELS.map((label, hour) => (
+                    <div
+                      key={hour}
+                      className="absolute left-0 right-0 flex cursor-pointer hover:bg-brand-500/5"
+                      style={{ top: `${hour * PX_PER_HOUR}px`, height: `${PX_PER_HOUR}px` }}
+                      onClick={() => handleSlotClick(hour)}
+                    >
+                      {/* Hour label */}
+                      <div className="flex w-14 flex-shrink-0 items-start justify-end pr-3 pt-1">
+                        <span className="text-[10px] font-medium text-zinc-600">{label}</span>
+                      </div>
+                      {/* Grid line */}
+                      <div className="flex-1 border-t border-surface-border/50" />
+                    </div>
+                  ))}
+
+                  {/* Half-hour lines */}
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <div
+                      key={`half-${hour}`}
+                      className="absolute left-14 right-0 border-t border-surface-border/20"
+                      style={{ top: `${hour * PX_PER_HOUR + PX_PER_HOUR / 2}px` }}
                     />
                   ))}
+
+                  {/* Current time indicator (today only) */}
+                  {heading?.isToday && (
+                    <div
+                      className="absolute left-0 right-0 z-20 flex items-center"
+                      style={{ top: `${currentTimeTop}px` }}
+                    >
+                      <div className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-red-500 ml-11" />
+                      <div className="flex-1 border-t-2 border-red-500" />
+                    </div>
+                  )}
+
+                  {/* Timed task blocks */}
+                  <div className="absolute inset-0 left-14 right-2">
+                    {layout.map(({ task, col, totalCols, startMin, endMin }) => (
+                      <TimelineBlock
+                        key={task.id}
+                        layout={{ task, col, totalCols, startMin, endMin }}
+                        onDetail={openTaskDetail}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* ── Footer ── */}
-            <div className="border-t border-surface-border px-5 py-3">
-              <Button variant="secondary" size="sm" className="w-full" onClick={closeCalendarDayPanel}>
-                Close
-              </Button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+              {/* ── Footer ── */}
+              <div className="border-t border-surface-border px-5 py-3">
+                <Button variant="secondary" size="sm" className="w-full" onClick={closeCalendarDayPanel}>
+                  Close
+                </Button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   )
 }

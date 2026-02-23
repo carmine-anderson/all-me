@@ -2,10 +2,14 @@ import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/providers/AuthProvider'
+import { generateOccurrenceDates } from '@/lib/recurrence'
 import type { Task, TaskFormValues, TaskStatus, RecurrenceDay } from '@/types'
 
 export const TASKS_QUERY_KEY = 'tasks'
 export const SHARED_TASKS_KEY = 'shared-tasks'
+
+// How far into the future to pre-generate recurring occurrence rows (days)
+const RECURRENCE_WINDOW_DAYS = 365
 
 function mapRow(row: Record<string, unknown>): Task {
   return {
@@ -19,6 +23,7 @@ function mapRow(row: Record<string, unknown>): Task {
     isRecurring: (row.is_recurring as boolean) ?? false,
     recurrenceDays: ((row.recurrence_days as string[]) ?? []) as RecurrenceDay[],
     recurrenceEndDate: (row.recurrence_end_date as string) ?? null,
+    recurrenceGroupId: (row.recurrence_group_id as string) ?? null,
     priority: row.priority as Task['priority'],
     status: row.status as Task['status'],
     completedAt: (row.completed_at as string) ?? null,
@@ -75,6 +80,7 @@ export function useSharedTasksQuery() {
             is_recurring,
             recurrence_days,
             recurrence_end_date,
+            recurrence_group_id,
             priority,
             status,
             completed_at,
@@ -83,7 +89,7 @@ export function useSharedTasksQuery() {
           )
         `)
         .eq('invitee_id', user.id)
-        .eq('status', 'accepted')
+        .in('status', ['accepted'])
 
       if (error) throw error
 
@@ -102,6 +108,7 @@ export function useSharedTasksQuery() {
             isRecurring: (task.is_recurring as boolean) ?? false,
             recurrenceDays: ((task.recurrence_days as string[]) ?? []) as RecurrenceDay[],
             recurrenceEndDate: (task.recurrence_end_date as string) ?? null,
+            recurrenceGroupId: (task.recurrence_group_id as string) ?? null,
             priority: task.priority as Task['priority'],
             status: task.status as Task['status'],
             completedAt: (task.completed_at as string) ?? null,
@@ -187,34 +194,76 @@ export function useCreateTask() {
     mutationFn: async (values: TaskFormValues) => {
       if (!user) throw new Error('Not authenticated')
 
-      // Build the insert payload — only include new time/recurrence fields
-      // when they have actual values, so the request works even if the
-      // migration hasn't been applied yet (graceful degradation).
-      const payload: Record<string, unknown> = {
-        user_id: user.id,
-        title: values.title,
-        description: values.description || null,
-        due_date: values.dueDate || null,   // empty string → null
-        priority: values.priority,
-        status: values.status,
+      const now = new Date().toISOString()
+
+      if (values.isRecurring && values.recurrenceDays && values.recurrenceDays.length > 0) {
+        // ── Recurring task: generate a shared recurrence_group_id and insert
+        //    one row per occurrence date within the pre-generation window ──────
+        const groupId = crypto.randomUUID()
+
+        // Build the window: today → today + RECURRENCE_WINDOW_DAYS
+        const today = now.slice(0, 10)
+        const windowEndDate = new Date()
+        windowEndDate.setDate(windowEndDate.getDate() + RECURRENCE_WINDOW_DAYS)
+        const windowEnd = windowEndDate.toISOString().slice(0, 10)
+
+        const templateTask = {
+          recurrenceDays: values.recurrenceDays,
+          recurrenceEndDate: values.recurrenceEndDate ?? null,
+          createdAt: now,
+        }
+
+        const occurrenceDates = generateOccurrenceDates(templateTask, today, windowEnd)
+
+        if (occurrenceDates.length === 0) {
+          throw new Error('No occurrence dates generated for this recurrence schedule.')
+        }
+
+        const rows = occurrenceDates.map((dateStr) => ({
+          user_id: user.id,
+          title: values.title,
+          description: values.description || null,
+          due_date: dateStr,
+          start_time: values.startTime || null,
+          end_time: values.endTime || null,
+          is_recurring: true,
+          recurrence_days: values.recurrenceDays,
+          recurrence_end_date: values.recurrenceEndDate || null,
+          recurrence_group_id: groupId,
+          priority: values.priority,
+          status: values.status,
+          created_at: now,
+          updated_at: now,
+        }))
+
+        const { error } = await supabase.from('tasks').insert(rows)
+        if (error) throw error
+
+        // Return a representative task (first occurrence)
+        return null
+      } else {
+        // ── Non-recurring task: single row ────────────────────────────────────
+        const payload: Record<string, unknown> = {
+          user_id: user.id,
+          title: values.title,
+          description: values.description || null,
+          due_date: values.dueDate || null,
+          priority: values.priority,
+          status: values.status,
+        }
+
+        if (values.startTime) payload.start_time = values.startTime
+        if (values.endTime) payload.end_time = values.endTime
+
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert(payload)
+          .select()
+          .single()
+
+        if (error) throw error
+        return mapRow(data)
       }
-
-      if (values.startTime) payload.start_time = values.startTime
-      if (values.endTime) payload.end_time = values.endTime
-      if (values.isRecurring) {
-        payload.is_recurring = true
-        payload.recurrence_days = values.recurrenceDays ?? []
-        if (values.recurrenceEndDate) payload.recurrence_end_date = values.recurrenceEndDate
-      }
-
-      const { data, error } = await supabase
-        .from('tasks')
-        .insert(payload)
-        .select()
-        .single()
-
-      if (error) throw error
-      return mapRow(data)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] })
@@ -263,10 +312,13 @@ export function useToggleTaskStatus() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: TaskStatus }) => {
+    mutationFn: async ({ id, currentStatus, isShared }: { id: string; currentStatus: TaskStatus; isShared?: boolean }) => {
       if (!user) throw new Error('Not authenticated')
       const newStatus: TaskStatus = currentStatus === 'done' ? 'todo' : 'done'
-      const { data, error } = await supabase
+
+      // For owned tasks, filter by user_id for an extra client-side guard.
+      // For shared tasks (invitees), omit the user_id filter — RLS handles auth.
+      let query = supabase
         .from('tasks')
         .update({
           status: newStatus,
@@ -274,9 +326,12 @@ export function useToggleTaskStatus() {
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)
-        .eq('user_id', user.id)
-        .select()
-        .single()
+
+      if (!isShared) {
+        query = query.eq('user_id', user.id)
+      }
+
+      const { data, error } = await query.select().single()
 
       if (error) throw error
       return mapRow(data)
@@ -300,6 +355,63 @@ export function useToggleTaskStatus() {
       }
     },
     onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] })
+    },
+  })
+}
+
+/**
+ * Marks ALL tasks in the same recurrence group as done.
+ * Used when the user chooses "Complete all occurrences".
+ */
+export function useCompleteAllRecurringTasks() {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ recurrenceGroupId }: { recurrenceGroupId: string }) => {
+      if (!user) throw new Error('Not authenticated')
+
+      const now = new Date().toISOString()
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          status: 'done' as TaskStatus,
+          completed_at: now,
+          updated_at: now,
+        })
+        .eq('user_id', user.id)
+        .eq('recurrence_group_id', recurrenceGroupId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] })
+    },
+  })
+}
+
+/**
+ * Deletes ALL tasks in the same recurrence group.
+ * Used when the user chooses "Delete all occurrences".
+ */
+export function useDeleteAllRecurringTasks() {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ recurrenceGroupId }: { recurrenceGroupId: string }) => {
+      if (!user) throw new Error('Not authenticated')
+
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('recurrence_group_id', recurrenceGroupId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, user?.id] })
     },
   })

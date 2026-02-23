@@ -56,6 +56,7 @@ export const tasks = pgTable('tasks', {
   isRecurring: boolean('is_recurring').default(false).notNull(),
   recurrenceDays: text('recurrence_days').array().default(sql`'{}'`).notNull(),
   recurrenceEndDate: date('recurrence_end_date'),
+  recurrenceGroupId: uuid('recurrence_group_id'),         // groups all occurrences of a series
   priority: text('priority').default('medium').notNull(), // low | medium | high
   status: text('status').default('todo').notNull(),       // todo | in_progress | done
   completedAt: timestamp('completed_at', { withTimezone: true }),

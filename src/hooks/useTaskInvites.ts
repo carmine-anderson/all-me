@@ -77,7 +77,7 @@ export function useSharedTasks() {
           )
         `)
         .eq('invitee_id', user.id)
-        .eq('status', 'accepted')
+        .in('status', ['accepted'])
 
       if (error) throw error
 
@@ -96,6 +96,7 @@ export function useSharedTasks() {
             isRecurring: (task.is_recurring as boolean) ?? false,
             recurrenceDays: ((task.recurrence_days as string[]) ?? []) as Task['recurrenceDays'],
             recurrenceEndDate: (task.recurrence_end_date as string) ?? null,
+            recurrenceGroupId: (task.recurrence_group_id as string) ?? null,
             priority: task.priority as Task['priority'],
             status: task.status as Task['status'],
             completedAt: (task.completed_at as string) ?? null,
@@ -162,6 +163,31 @@ export function useSendTaskInvites() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [TASK_INVITES_KEY, user?.id] })
+    },
+  })
+}
+
+// ─── useLeaveTask — invitee removes themselves from a shared task ─────────────
+export function useLeaveTask() {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (taskInviteId: string) => {
+      if (!user) throw new Error('Not authenticated')
+
+      const { error } = await supabase
+        .from('task_invites')
+        .update({ status: 'left', updated_at: new Date().toISOString() })
+        .eq('id', taskInviteId)
+        .eq('invitee_id', user.id) // only the invitee can leave
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [TASK_INVITES_KEY, user?.id] })
+      queryClient.invalidateQueries({ queryKey: [SHARED_TASKS_KEY, user?.id] })
+      queryClient.invalidateQueries({ queryKey: [TASKS_KEY, user?.id] })
     },
   })
 }

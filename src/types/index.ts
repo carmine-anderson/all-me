@@ -35,6 +35,7 @@ export interface Task {
   isRecurring: boolean
   recurrenceDays: RecurrenceDay[]
   recurrenceEndDate: string | null // YYYY-MM-DD
+  recurrenceGroupId: string | null // groups all occurrences of a series
   priority: TaskPriority
   status: TaskStatus
   completedAt: string | null
@@ -45,8 +46,6 @@ export interface Task {
   inviterName?: string | null
   inviterEmail?: string | null
   taskInviteId?: string | null
-  // Virtual instance flag (set by recurrence expander — never persisted)
-  isVirtual?: boolean
 }
 
 export type PomodoroSessionType = 'work' | 'short_break' | 'long_break'
@@ -120,7 +119,7 @@ export interface NotificationWithActor extends Notification {
 
 // ─── Task Invite types ────────────────────────────────────────────────────────
 
-export type TaskInviteStatus = 'pending' | 'accepted' | 'declined'
+export type TaskInviteStatus = 'pending' | 'accepted' | 'declined' | 'left'
 
 export interface TaskInvite {
   id: string

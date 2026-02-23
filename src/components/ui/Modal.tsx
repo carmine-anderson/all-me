@@ -8,6 +8,7 @@ interface ModalProps {
   title?: string
   children: ReactNode
   className?: string
+  containerClassName?: string
   size?: 'sm' | 'md' | 'lg'
 }
 
@@ -17,7 +18,7 @@ const sizeClasses = {
   lg: 'max-w-lg',
 }
 
-export function Modal({ open, onClose, title, children, className, size = 'md' }: ModalProps) {
+export function Modal({ open, onClose, title, children, className, containerClassName, size = 'md' }: ModalProps) {
   // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -37,7 +38,7 @@ export function Modal({ open, onClose, title, children, className, size = 'md' }
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className={cn('fixed inset-0 z-50 flex items-center justify-center p-4', containerClassName)}>
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}

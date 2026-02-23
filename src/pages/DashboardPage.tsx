@@ -146,7 +146,7 @@ export function DashboardPage() {
               <CardHeader>
                 <CardTitle>Upcoming Tasks</CardTitle>
               </CardHeader>
-              <TaskList limit={5} showFilters={false} />
+              <TaskList limit={5} showFilters={false} hideDone />
               <div className="mt-4 border-t border-surface-border pt-3">
                 <a
                   href="/tasks"
